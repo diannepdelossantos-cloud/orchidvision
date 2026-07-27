@@ -3,6 +3,7 @@
     "name": "OrchidVision",
     "slug": "OrchidVision",
     "version": "1.0.0",
+    "scheme": "orchidvision",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -19,6 +20,21 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "OrchidVision needs camera access to capture orchid images for disease detection."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "OrchidVision needs photo library access so you can choose a profile picture."
+        }
+      ],
+      "expo-web-browser"
+    ]
   }
 }
