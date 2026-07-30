@@ -4,12 +4,13 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
+import ScanScreen from '../screens/Main/ScanScreen';
 import { useTheme } from '../context/ThemeContext';
 import { SPACING, TYPOGRAPHY } from '../utils/theme';
 
 const Tab = createBottomTabNavigator();
 
-// My Orchids, Scan, and OrchAi belong to other teammates' modules — these
+// My Orchids and OrchAi belong to other teammates' modules — these
 // are placeholders so the tab bar matches the storyboard now, the same way
 // Module 1's AppNavigator stubbed out Permissions/Sign In before they existed.
 function ComingSoonScreen({ label, colors }) {
@@ -48,12 +49,11 @@ export default function MainTabNavigator() {
       </Tab.Screen>
       <Tab.Screen
         name="Scan"
+        component={ScanScreen}
         options={{
           tabBarIcon: ({ color, size }) => <Ionicons name="camera" size={size + 4} color={color} />,
         }}
-      >
-        {() => <ComingSoonScreen label="Scan — coming soon" colors={colors} />}
-      </Tab.Screen>
+      />
       <Tab.Screen
         name="OrchAi"
         options={{
