@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -19,6 +18,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useProfile } from '../../context/ProfileContext';
 import { getAuthErrorMessage } from '../../utils/authErrors';
+import { showAlert } from '../../utils/showAlert';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
 
 function getInitials(fullName) {
@@ -50,7 +50,7 @@ export default function ProfileScreen() {
   const handlePickAvatar = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Photo access needed', 'Enable photo library access to change your profile picture.');
+      showAlert('Photo access needed', 'Enable photo library access to change your profile picture.');
       return;
     }
 
@@ -66,7 +66,7 @@ export default function ProfileScreen() {
     try {
       await uploadAvatar(result.assets[0].uri);
     } catch (error) {
-      Alert.alert('Upload failed', getAuthErrorMessage(error));
+      showAlert('Upload failed', getAuthErrorMessage(error));
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -76,16 +76,16 @@ export default function ProfileScreen() {
     setIsSaving(true);
     try {
       await updateProfile({ fullName: fullName.trim(), location: location.trim(), stationId: stationId.trim() });
-      Alert.alert('Saved', 'Your profile has been updated.');
+      showAlert('Saved', 'Your profile has been updated.');
     } catch (error) {
-      Alert.alert('Could not save', getAuthErrorMessage(error));
+      showAlert('Could not save', getAuthErrorMessage(error));
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleSignOut = () => {
-    Alert.alert('Sign out?', 'You can sign back in anytime.', [
+    showAlert('Sign out?', 'You can sign back in anytime.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign Out', style: 'destructive', onPress: signOutUser },
     ]);

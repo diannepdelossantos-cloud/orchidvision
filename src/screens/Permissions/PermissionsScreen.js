@@ -1,15 +1,16 @@
 import React, { useCallback } from 'react';
-import { Alert, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCameraPermissions } from 'expo-camera';
 import PermissionCard from '../../components/PermissionCard';
 import { useNotificationPermission } from '../../hooks/useNotificationPermission';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
+import { showAlert } from '../../utils/showAlert';
 
 // Explains why a just-denied permission matters and offers a way to
 // grant it later from Settings instead of silently moving on.
 function explainDenied(label) {
-  Alert.alert(
+  showAlert(
     `${label} permission denied`,
     `You can still use OrchidVision, but you can enable ${label.toLowerCase()} access anytime from your device Settings.`,
     [{ text: 'Got it' }],
@@ -30,7 +31,7 @@ export default function PermissionsScreen({ navigation }) {
     if (result.granted) return;
 
     if (result.status === 'unavailable') {
-      Alert.alert(
+      showAlert(
         'Not available in Expo Go',
         "Notifications require a development build to test on this device — they'll work normally once OrchidVision runs outside Expo Go.",
         [{ text: 'Got it' }],
@@ -44,7 +45,7 @@ export default function PermissionsScreen({ navigation }) {
   // deep-link to from a browser, so web gets an explanatory message instead.
   const openSettings = useCallback(() => {
     if (Platform.OS === 'web') {
-      Alert.alert(
+      showAlert(
         'Enable in your browser',
         'Open your browser\'s site settings for this page to change camera or notification permissions.',
       );

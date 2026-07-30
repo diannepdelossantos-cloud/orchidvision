@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import AuthTextField from '../../components/AuthTextField';
@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotificationPreferences } from '../../hooks/useNotificationPreferences';
 import { getAuthErrorMessage } from '../../utils/authErrors';
 import { isValidPassword } from '../../utils/validators';
+import { showAlert } from '../../utils/showAlert';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
 
 const THEME_OPTIONS = [
@@ -60,33 +61,33 @@ export default function SettingsScreen() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      Alert.alert('Password updated', 'Your password has been changed.');
+      showAlert('Password updated', 'Your password has been changed.');
     } catch (error) {
-      Alert.alert('Could not update password', getAuthErrorMessage(error));
+      showAlert('Could not update password', getAuthErrorMessage(error));
     } finally {
       setIsUpdatingPassword(false);
     }
   };
 
   const handleEnableTwoFactor = () => {
-    Alert.alert('Coming soon', 'Two-Factor Authentication will be available in a future update.');
+    showAlert('Coming soon', 'Two-Factor Authentication will be available in a future update.');
   };
 
   const handleClearScanHistory = () => {
-    Alert.alert('Clear scan history?', 'This cannot be undone.', [
+    showAlert('Clear scan history?', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Clear',
         style: 'destructive',
-        onPress: () => Alert.alert('Nothing to clear', "You don't have any scan history yet."),
+        onPress: () => showAlert('Nothing to clear', "You don't have any scan history yet."),
       },
     ]);
   };
 
   const handleClearCache = () => {
-    Alert.alert('Clear cache?', 'This frees up locally stored temporary data.', [
+    showAlert('Clear cache?', 'This frees up locally stored temporary data.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear', onPress: () => Alert.alert('Cache cleared', 'Temporary data has been removed.') },
+      { text: 'Clear', onPress: () => showAlert('Cache cleared', 'Temporary data has been removed.') },
     ]);
   };
 
