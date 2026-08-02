@@ -1,5 +1,4 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
@@ -13,7 +12,6 @@ import ResetPasswordScreen from '../screens/Auth/ResetPassword/ResetPasswordScre
 import PasswordUpdatedScreen from '../screens/Auth/ResetPassword/PasswordUpdatedScreen';
 import MainTabNavigator from './MainTabNavigator';
 import { useAuth } from '../context/AuthContext';
-import { COLORS } from '../utils/theme';
 
 const Stack = createNativeStackNavigator();
 
@@ -29,25 +27,18 @@ const linking = {
 };
 
 export default function AppNavigator() {
-  const { user, initializing } = useAuth();
-
-  // Brief, only while Firebase checks AsyncStorage for a persisted session.
-  if (initializing) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
+  const { user } = useAuth();
 
   return (
     <NavigationContainer linking={linking}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {/* Always the first screen shown, on every launch, while Splash
+            itself waits for Firebase to resolve the persisted session. */}
+        <Stack.Screen name="Splash" component={SplashScreen} />
         {user ? (
           <Stack.Screen name="Main" component={MainTabNavigator} />
         ) : (
           <>
-            <Stack.Screen name="Splash" component={SplashScreen} />
             <Stack.Screen name="Onboarding" component={OnboardingScreen} />
             <Stack.Screen name="Permissions" component={PermissionsScreen} />
             <Stack.Screen name="SignIn" component={SignInScreen} />
@@ -61,12 +52,3 @@ export default function AppNavigator() {
     </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.background,
-  },
-});
