@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -14,8 +15,10 @@ import {
   signOut,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { auth, db, storage } from './firebaseConfig';
+import { auth, db } from './firebaseConfig';
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
+import { supabase } from '../supabase/supabaseClient';
 
 // Thin wrappers around the Firebase calls used by the Auth screens.
 // Screens/context call these instead of touching the SDK directly, so the
@@ -109,17 +112,43 @@ export async function updateUserProfile(uid, { fullName, location, stationId }) 
   }
 }
 
+// Uploads the avatar to Supabase Storage (Firebase Storage requires the
+// paid Blaze plan, so file hosting lives in Supabase instead) and saves
+// the resulting public URL to both the Firestore doc and the Firebase
+// Auth profile, same as the rest of this file does for other fields.
+// expo-file-system's readAsStringAsync is native-only, so on web we read
+// the file as a blob directly instead.
 export async function uploadAvatar(uid, localUri) {
-  const response = await fetch(localUri);
-  const blob = await response.blob();
-  const avatarRef = ref(storage, `avatars/${uid}.jpg`);
-  await uploadBytes(avatarRef, blob);
-  const photoURL = await getDownloadURL(avatarRef);
+  const filePath = `avatars/${uid}.jpg`;
+  let fileData;
+
+  if (Platform.OS === 'web') {
+    const response = await fetch(localUri);
+    fileData = await response.blob();
+  } else {
+    const base64 = await FileSystem.readAsStringAsync(localUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    fileData = decode(base64);
+  }
+
+  const { error: uploadError } = await supabase.storage
+    .from('avatars')
+    .upload(filePath, fileData, {
+      contentType: 'image/jpeg',
+      upsert: true,
+    });
+
+  if (uploadError) throw uploadError;
+
+  const { data } = supabase.storage.from('avatars').getPublicUrl(filePath);
+  const photoURL = data.publicUrl;
 
   await updateDoc(doc(db, 'users', uid), { photoURL });
   if (auth.currentUser) {
     await updateProfile(auth.currentUser, { photoURL });
   }
+
   return photoURL;
 }
 
