@@ -9,6 +9,7 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
+  const [role, setRole] = useState(null);
 
   useEffect(() => {
     const unsubscribe = authService.subscribeToAuthChanges((firebaseUser) => {
@@ -18,10 +19,31 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
+  // Track the signed-in user's role from their Firestore doc, so
+  // navigation can route admins to the Admin stack instead of Main.
+  // Missing role (or any value other than 'admin') is treated as a
+  // regular user — this is a routing convenience only, not a security
+  // boundary; admin-only writes must still be enforced by Firestore rules.
+  useEffect(() => {
+    if (!user) {
+      setRole(null);
+      return undefined;
+    }
+
+    const unsubscribe = authService.subscribeToUserDocument(user.uid, (data) => {
+      setRole(data?.role || 'user');
+    });
+    return unsubscribe;
+  }, [user]);
+
+  const isAdmin = role === 'admin';
+
   const value = useMemo(
     () => ({
       user,
       initializing,
+      role,
+      isAdmin,
       signIn: authService.signIn,
       signUp: authService.signUp,
       signInWithGoogleIdToken: authService.signInWithGoogleIdToken,
@@ -31,7 +53,7 @@ export function AuthProvider({ children }) {
       changePassword: authService.changePassword,
       signOutUser: authService.signOutUser,
     }),
-    [user, initializing],
+    [user, initializing, role, isAdmin],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
