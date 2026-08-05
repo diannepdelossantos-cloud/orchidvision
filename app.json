@@ -8,15 +8,21 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.orchidvision.app"
     },
     "android": {
+      "package": "com.orchidvision.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -34,7 +40,13 @@
           "photosPermission": "OrchidVision needs photo library access so you can choose a profile picture."
         }
       ],
-      "expo-web-browser"
-    ]
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0cc12e93-f652-4a5e-bd8d-381b5cdb5b71"
+      }
+    }
   }
 }
