@@ -19,7 +19,7 @@ const TAGLINE_DELAY_MS = 2000;
 const TAGLINE_FADE_DURATION_MS = 500;
 
 export default function SplashScreen({ navigation }) {
-  const { user, initializing, isAdmin } = useAuth();
+  const { user, initializing, isAdmin, needsTwoFactor } = useAuth();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const taglineFadeAnim = useRef(new Animated.Value(0)).current;
   const [minDurationElapsed, setMinDurationElapsed] = useState(false);
@@ -48,7 +48,7 @@ export default function SplashScreen({ navigation }) {
 
     (async () => {
       if (user) {
-        if (isActive) setDestination(isAdmin ? 'Admin' : 'Main');
+        if (isActive) setDestination(needsTwoFactor ? 'TwoFactor' : isAdmin ? 'Admin' : 'Main');
         return;
       }
       const onboardingComplete = await getOnboardingComplete();
@@ -59,7 +59,7 @@ export default function SplashScreen({ navigation }) {
     return () => {
       isActive = false;
     };
-  }, [user, initializing, isAdmin]);
+  }, [user, initializing, isAdmin, needsTwoFactor]);
 
   // Returning/signed-in users: auto-navigate once the minimum splash time
   // has elapsed. New users headed to Onboarding wait for the button instead.

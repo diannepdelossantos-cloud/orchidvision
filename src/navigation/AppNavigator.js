@@ -11,7 +11,12 @@ import ForgotPasswordScreen from '../screens/Auth/ForgotPassword/ForgotPasswordS
 import ResetPasswordScreen from '../screens/Auth/ResetPassword/ResetPasswordScreen';
 import PasswordUpdatedScreen from '../screens/Auth/ResetPassword/PasswordUpdatedScreen';
 import MainTabNavigator from './MainTabNavigator';
+<<<<<<< HEAD
 import AdminNavigator from './AdminNavigator.js';
+=======
+import AdminNavigator from './AdminNavigator';
+import TwoFactorScreen from '../screens/Auth/TwoFactor/TwoFactorScreen';
+>>>>>>> 18cf3e604744173e06bdb69d02798de7208d020d
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -28,7 +33,7 @@ const linking = {
 };
 
 export default function AppNavigator() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, needsTwoFactor } = useAuth();
 
   return (
     <NavigationContainer linking={linking}>
@@ -37,7 +42,9 @@ export default function AppNavigator() {
             itself waits for Firebase to resolve the persisted session. */}
         <Stack.Screen name="Splash" component={SplashScreen} />
         {user ? (
-          isAdmin ? (
+          needsTwoFactor ? (
+            <Stack.Screen name="TwoFactor" component={TwoFactorScreen} />
+          ) : isAdmin ? (
             <Stack.Screen name="Admin" component={AdminNavigator} />
           ) : (
             <Stack.Screen name="Main" component={MainTabNavigator} />
