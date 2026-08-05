@@ -1,7 +1,8 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { COLORS, RADIUS, SHADOW } from '../utils/theme';
+
+const GOOGLE_LOGO = require('../assets/google-logo.png');
 
 // The circular "continue with Google" button shown on the Sign In screen.
 export default function GoogleButton({ onPress, loading, disabled }) {
@@ -15,7 +16,7 @@ export default function GoogleButton({ onPress, loading, disabled }) {
       {loading ? (
         <ActivityIndicator color={COLORS.textPrimary} />
       ) : (
-        <Ionicons name="logo-google" size={22} color="#DB4437" />
+        <Image source={GOOGLE_LOGO} style={styles.logo} resizeMode="contain" />
       )}
     </TouchableOpacity>
   );
@@ -32,5 +33,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...SHADOW.soft,
+  },
+  logo: {
+    width: 28,
+    height: 28,
   },
 });

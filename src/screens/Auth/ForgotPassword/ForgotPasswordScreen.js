@@ -17,6 +17,7 @@ import PrimaryButton from '../../../components/PrimaryButton';
 import { useAuth } from '../../../context/AuthContext';
 import { getAuthErrorMessage } from '../../../utils/authErrors';
 import { isValidEmail } from '../../../utils/validators';
+import { showAlert } from '../../../utils/showAlert';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../../../utils/theme';
 
 export default function ForgotPasswordScreen({ navigation }) {
@@ -50,6 +51,30 @@ export default function ForgotPasswordScreen({ navigation }) {
     }
   };
 
+  // iOS: "message://" opens the native Mail app's inbox directly.
+  // Android/web: no universal "open inbox" scheme exists, so "mailto:"
+  // (which triggers the OS's mail app picker) is the closest equivalent.
+  // Falls back to mailto: on iOS too if message:// isn't available
+  // (e.g. no Mail app account configured, or running in Expo Go where
+  // canOpenURL checks can be unreliable for custom schemes).
+  const handleOpenMailApp = async () => {
+    const primaryUrl = Platform.OS === 'ios' ? 'message://' : 'mailto:';
+    try {
+      const supported = await Linking.canOpenURL(primaryUrl);
+      if (supported) {
+        await Linking.openURL(primaryUrl);
+        return;
+      }
+      if (Platform.OS === 'ios') {
+        await Linking.openURL('mailto:');
+        return;
+      }
+      showAlert('No mail app found', 'Please check your inbox manually.');
+    } catch (err) {
+      showAlert('Could not open mail app', 'Please check your inbox manually.');
+    }
+  };
+
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -80,7 +105,7 @@ export default function ForgotPasswordScreen({ navigation }) {
               trying again.
             </Text>
 
-            <PrimaryButton title="Open Mail App" onPress={() => Linking.openURL('mailto:')} />
+            <PrimaryButton title="Open Mail App" onPress={handleOpenMailApp} />
             <TouchableOpacity style={styles.secondaryButton} onPress={() => setIsSent(false)}>
               <Text style={styles.secondaryButtonText}>Try a different email</Text>
             </TouchableOpacity>

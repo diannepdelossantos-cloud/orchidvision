@@ -11,7 +11,7 @@ import ForgotPasswordScreen from '../screens/Auth/ForgotPassword/ForgotPasswordS
 import ResetPasswordScreen from '../screens/Auth/ResetPassword/ResetPasswordScreen';
 import PasswordUpdatedScreen from '../screens/Auth/ResetPassword/PasswordUpdatedScreen';
 import MainTabNavigator from './MainTabNavigator';
-import AdminNavigator from './AdminNavigator';
+import AdminNavigator from './AdminNavigator.js';
 import { useAuth } from '../context/AuthContext';
 
 const Stack = createNativeStackNavigator();

@@ -16,7 +16,12 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+  "package": "com.orchidvision.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -34,7 +39,8 @@
           "photosPermission": "OrchidVision needs photo library access so you can choose a profile picture."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "react-native-fast-tflite"
     ]
   }
 }
