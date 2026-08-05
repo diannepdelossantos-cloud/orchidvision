@@ -38,7 +38,13 @@ function ToggleRow({ label, description, value, onValueChange, colors }) {
 
 export default function SettingsScreen() {
   const { colors, themeMode, setThemeMode } = useTheme();
-  const { changePassword } = useAuth();
+  const {
+    changePassword,
+    twoFactorEnabled,
+    sendTwoFactorCode,
+    verifyTwoFactorCode,
+    updateTwoFactorEnabled,
+  } = useAuth();
   const { preferences, setPreference } = useNotificationPreferences();
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -46,6 +52,12 @@ export default function SettingsScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordErrors, setPasswordErrors] = useState({});
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  const [isSendingTwoFactorCode, setIsSendingTwoFactorCode] = useState(false);
+  const [showTwoFactorCodeInput, setShowTwoFactorCodeInput] = useState(false);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorError, setTwoFactorError] = useState(null);
+  const [isVerifyingTwoFactorCode, setIsVerifyingTwoFactorCode] = useState(false);
 
   const handleUpdatePassword = async () => {
     const nextErrors = {};
@@ -69,8 +81,51 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleEnableTwoFactor = () => {
-    showAlert('Coming soon', 'Two-Factor Authentication will be available in a future update.');
+  const handleEnableTwoFactor = async () => {
+    setTwoFactorError(null);
+    setIsSendingTwoFactorCode(true);
+    try {
+      await sendTwoFactorCode();
+      setShowTwoFactorCodeInput(true);
+    } catch (error) {
+      showAlert('Could not send code', error?.message || 'Please try again.');
+    } finally {
+      setIsSendingTwoFactorCode(false);
+    }
+  };
+
+  const handleCancelTwoFactorSetup = () => {
+    setShowTwoFactorCodeInput(false);
+    setTwoFactorCode('');
+    setTwoFactorError(null);
+  };
+
+  const handleConfirmTwoFactorSetup = async () => {
+    setTwoFactorError(null);
+    if (twoFactorCode.trim().length < 6) {
+      setTwoFactorError('Enter the code from your email.');
+      return;
+    }
+
+    setIsVerifyingTwoFactorCode(true);
+    try {
+      await verifyTwoFactorCode(twoFactorCode.trim());
+      await updateTwoFactorEnabled(true);
+      setShowTwoFactorCodeInput(false);
+      setTwoFactorCode('');
+      showAlert('Two-Factor Authentication enabled', "You'll be asked for a code like this each time you sign in.");
+    } catch (error) {
+      setTwoFactorError(error?.message || 'That code is invalid or expired.');
+    } finally {
+      setIsVerifyingTwoFactorCode(false);
+    }
+  };
+
+  const handleDisableTwoFactor = () => {
+    showAlert('Turn off Two-Factor Authentication?', 'You can turn it back on anytime.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Turn Off', style: 'destructive', onPress: () => updateTwoFactorEnabled(false) },
+    ]);
   };
 
   const handleClearScanHistory = () => {
@@ -198,16 +253,61 @@ export default function SettingsScreen() {
                 Two-Factor Authentication
               </Text>
               <Text style={[styles.toggleDescription, { color: colors.textSecondary }]}>
-                Add extra layer of security
+                {twoFactorEnabled
+                  ? 'A code is emailed to you at every sign-in'
+                  : 'Add extra layer of security'}
               </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.enableButton, { backgroundColor: colors.primary }]}
-              onPress={handleEnableTwoFactor}
-            >
-              <Text style={[styles.enableButtonText, { color: colors.textInverse }]}>Enable</Text>
-            </TouchableOpacity>
+            {twoFactorEnabled ? (
+              <TouchableOpacity
+                style={[styles.enableButton, { backgroundColor: colors.error }]}
+                onPress={handleDisableTwoFactor}
+              >
+                <Text style={[styles.enableButtonText, { color: colors.textInverse }]}>Turn Off</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.enableButton, { backgroundColor: colors.primary }]}
+                onPress={handleEnableTwoFactor}
+                disabled={isSendingTwoFactorCode}
+              >
+                <Text style={[styles.enableButtonText, { color: colors.textInverse }]}>
+                  {isSendingTwoFactorCode ? 'Sending…' : 'Enable'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
+
+          {showTwoFactorCodeInput && (
+            <View style={styles.twoFactorCodeBlock}>
+              <Text style={[styles.toggleDescription, { color: colors.textSecondary }]}>
+                Enter the code we emailed you to confirm.
+              </Text>
+              <AuthTextField
+                label="Verification Code"
+                icon="keypad-outline"
+                value={twoFactorCode}
+                onChangeText={setTwoFactorCode}
+                placeholder="12345678"
+                keyboardType="number-pad"
+                maxLength={8}
+                error={twoFactorError}
+                colors={colors}
+              />
+              <View style={styles.twoFactorCodeActions}>
+                <PrimaryButton
+                  title="Confirm"
+                  onPress={handleConfirmTwoFactorSetup}
+                  loading={isVerifyingTwoFactorCode}
+                  colors={colors}
+                  style={styles.twoFactorConfirmButton}
+                />
+                <TouchableOpacity onPress={handleCancelTwoFactorSetup} style={styles.twoFactorCancelButton}>
+                  <Text style={[styles.enableButtonText, { color: colors.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
           <PrimaryButton
             title="Update Password"
@@ -320,6 +420,21 @@ const styles = StyleSheet.create({
   enableButtonText: {
     ...TYPOGRAPHY.caption,
     fontWeight: '700',
+  },
+  twoFactorCodeBlock: {
+    marginBottom: SPACING.lg,
+  },
+  twoFactorCodeActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  twoFactorConfirmButton: {
+    flex: 1,
+  },
+  twoFactorCancelButton: {
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.sm,
   },
   updatePasswordButton: {
     marginTop: SPACING.xs,

@@ -94,6 +94,17 @@ export function signOutUser() {
   return signOut(auth);
 }
 
+// Two-Factor Authentication is opt-in per user (Settings toggle) and checked
+// once, right after sign-in, via AuthContext — not on every profile read.
+export async function getTwoFactorEnabled(uid) {
+  const snapshot = await getDoc(doc(db, 'users', uid));
+  return !!snapshot.data()?.twoFactorEnabled;
+}
+
+export async function setTwoFactorEnabled(uid, enabled) {
+  await updateDoc(doc(db, 'users', uid), { twoFactorEnabled: enabled });
+}
+
 // Real-time subscription to the signed-in user's Firestore profile document,
 // used by ProfileContext so edits (from any device/tab) reflect immediately.
 export function subscribeToUserDocument(uid, callback) {
