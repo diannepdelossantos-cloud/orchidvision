@@ -22,12 +22,7 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
-<<<<<<< HEAD
-      ],
-  "package": "com.orchidvision.app"
-=======
       ]
->>>>>>> 18cf3e604744173e06bdb69d02798de7208d020d
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -46,17 +41,13 @@
         }
       ],
       "expo-web-browser",
-<<<<<<< HEAD
+      "@react-native-google-signin/google-signin",
       "react-native-fast-tflite"
-    ]
-=======
-      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "eas": {
         "projectId": "0cc12e93-f652-4a5e-bd8d-381b5cdb5b71"
       }
     }
->>>>>>> 18cf3e604744173e06bdb69d02798de7208d020d
   }
 }
