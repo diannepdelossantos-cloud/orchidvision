@@ -7,6 +7,7 @@ import PrimaryButton from '../../components/PrimaryButton';
 import DangerButton from '../../components/DangerButton';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { useScanHistory } from '../../context/ScanHistoryContext';
 import { useNotificationPreferences } from '../../hooks/useNotificationPreferences';
 import { getAuthErrorMessage } from '../../utils/authErrors';
 import { isValidPassword } from '../../utils/validators';
@@ -46,6 +47,7 @@ export default function SettingsScreen() {
     updateTwoFactorEnabled,
   } = useAuth();
   const { preferences, setPreference } = useNotificationPreferences();
+  const { records, deleteRecord } = useScanHistory();
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -129,14 +131,27 @@ export default function SettingsScreen() {
   };
 
   const handleClearScanHistory = () => {
-    showAlert('Clear scan history?', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Clear',
-        style: 'destructive',
-        onPress: () => showAlert('Nothing to clear', "You don't have any scan history yet."),
-      },
-    ]);
+    if (records.length === 0) {
+      showAlert('Nothing to clear', "You don't have any scan history yet.");
+      return;
+    }
+
+    showAlert(
+      'Clear scan history?',
+      'Cleared scans move to Restore on the Profile screen and are kept for 30 days before being permanently deleted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: () => {
+            Promise.all(records.map((record) => deleteRecord(record.id))).catch((error) => {
+              showAlert('Could not clear history', error?.message || 'Please try again.');
+            });
+          },
+        },
+      ],
+    );
   };
 
   const handleClearCache = () => {

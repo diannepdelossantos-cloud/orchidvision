@@ -23,7 +23,6 @@
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ]
- 
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -42,7 +41,14 @@
         }
       ],
       "expo-web-browser",
-      "react-native-fast-tflite"
-    ]
+      "react-native-fast-tflite",
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0cc12e93-f652-4a5e-bd8d-381b5cdb5b71"
+      }
+    },
+    "owner": "diannedelossantos"
   }
 }
