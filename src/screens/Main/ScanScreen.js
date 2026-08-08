@@ -17,12 +17,14 @@ import { useNavigation } from '@react-navigation/native';
 
 import { predictDisease } from '../../services/predictionService';
 import ScanResultCard from '../../components/ScanResultCard';
+import { useScanHistory } from '../../context/ScanHistoryContext';
 
 // Must match the <Tab.Screen name="..."> in MainTabNavigator.js exactly.
 const MY_ORCHIDS_ROUTE = 'My Orchids';
 
 export default function ScanScreen() {
   const navigation = useNavigation();
+  const { addScanRecord } = useScanHistory();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedImage, setCapturedImage] = useState(null);
@@ -53,7 +55,7 @@ export default function ScanScreen() {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.8 });
       resetAll();
       setCapturedImage(photo.uri);
-      runScan(photo.uri);
+      runScan(photo.uri, 'Scanned');
     } catch (e) {
       Alert.alert('Camera error', 'The photo could not be captured. Try again.');
     }
@@ -68,11 +70,11 @@ export default function ScanScreen() {
     if (!picked.canceled) {
       resetAll();
       setCapturedImage(picked.assets[0].uri);
-      runScan(picked.assets[0].uri);
+      runScan(picked.assets[0].uri, 'Uploaded');
     }
   };
 
-  const runScan = async (uri) => {
+  const runScan = async (uri, source) => {
     setLoading(true);
     try {
       const prediction = await predictDisease(uri);
@@ -80,6 +82,14 @@ export default function ScanScreen() {
         setNotOrchidWarning(prediction);
       } else {
         setResult(prediction);
+        // Saving to history is best-effort — a failure here shouldn't hide
+        // the result the user just waited for.
+        addScanRecord({
+          label: prediction.top.label,
+          confidence: prediction.top.score,
+          imageUri: uri,
+          source,
+        }).catch(() => {});
       }
     } catch (e) {
       Alert.alert('Scan failed', 'The image could not be analyzed. Try again.');
