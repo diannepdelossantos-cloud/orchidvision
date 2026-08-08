@@ -1,10 +1,10 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  Dimensions,
   FlatList,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,10 +14,10 @@ import { ONBOARDING_SLIDES } from './onboardingSlides';
 import { setOnboardingComplete } from '../../utils/onboardingStorage';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const LAST_INDEX = ONBOARDING_SLIDES.length - 1;
 
 export default function OnboardingScreen({ navigation }) {
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef(null);
   const isLastSlide = currentIndex === LAST_INDEX;

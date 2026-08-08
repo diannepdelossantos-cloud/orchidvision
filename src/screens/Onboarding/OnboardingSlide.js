@@ -1,11 +1,11 @@
 import React from 'react';
-import { Dimensions, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../utils/theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 export default function OnboardingSlide({ slide }) {
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+
   return (
     <View style={[styles.slide, { width: SCREEN_WIDTH }]}>
       <View style={styles.illustration}>
