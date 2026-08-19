@@ -1,38 +1,70 @@
 import React from 'react';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 import AdminDashboardScreen from '../screens/Admin/AdminDashboardScreen';
 import AdminUsersScreen from '../screens/Admin/AdminUsersScreen';
-import AdminContentScreen from '../screens/Admin/AdminContentScreen';
+import AdminDiseasesNavigator from './AdminDiseasesNavigator';
+import AdminDataScreen from '../screens/Admin/Data/AdminDataScreen';
+import AdminMonitorScreen from '../screens/Admin/AdminMonitorScreen';
 import { useTheme } from '../context/ThemeContext';
 
-const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
 
+// Bottom tab bar for the Admin Control Center: Home, Users, Diseases,
+// Data, Monitor — matching the storyboard's five-tab layout. Each screen
+// builds its own AdminHeader, so native stack headers stay hidden here.
 export default function AdminNavigator() {
   const { colors } = useTheme();
 
   return (
-    <Stack.Navigator
+    <Tab.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: colors.surface },
-        headerTintColor: colors.textPrimary,
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
       }}
     >
-      {/* AdminDashboardScreen builds its own header, so the native one stays hidden here. */}
-      <Stack.Screen
-        name="AdminDashboard"
+      <Tab.Screen
+        name="AdminHome"
         component={AdminDashboardScreen}
-        options={{ headerShown: false }}
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" size={size} color={color} />,
+        }}
       />
-      <Stack.Screen
+      <Tab.Screen
         name="AdminUsers"
         component={AdminUsersScreen}
-        options={{ title: 'Manage Users' }}
+        options={{
+          title: 'Users',
+          tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
+        }}
       />
-      <Stack.Screen
-        name="AdminContent"
-        component={AdminContentScreen}
-        options={{ title: 'Manage Content' }}
+      <Tab.Screen
+        name="AdminDiseases"
+        component={AdminDiseasesNavigator}
+        options={{
+          title: 'Diseases',
+          tabBarIcon: ({ color, size }) => <Ionicons name="leaf-outline" size={size} color={color} />,
+        }}
       />
-    </Stack.Navigator>
+      <Tab.Screen
+        name="AdminData"
+        component={AdminDataScreen}
+        options={{
+          title: 'Data',
+          tabBarIcon: ({ color, size }) => <Ionicons name="server-outline" size={size} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="AdminMonitor"
+        component={AdminMonitorScreen}
+        options={{
+          title: 'Monitor',
+          tabBarIcon: ({ color, size }) => <Ionicons name="pulse-outline" size={size} color={color} />,
+        }}
+      />
+    </Tab.Navigator>
   );
 }

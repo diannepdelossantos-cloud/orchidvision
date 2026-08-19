@@ -1,4 +1,5 @@
 import {
+  addDoc,
   collection,
   onSnapshot,
   doc,
@@ -6,6 +7,7 @@ import {
   deleteDoc,
   query,
   orderBy,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 
@@ -42,4 +44,18 @@ export function subscribeToAllScans(callback) {
 
 export async function deleteScan(scanId) {
   await deleteDoc(doc(db, 'scans', scanId));
+}
+
+// Used by the User Management "+ Add" flow. NOTE: this only creates the
+// Firestore profile document, mirroring deleteUserProfile's limitation —
+// it does NOT create a Firebase Auth account, so the invited person can't
+// actually sign in yet. A real invite flow needs a backend/Cloud Function
+// (e.g. admin.auth().createUser + emailed set-password link).
+export async function addUserPlaceholder({ fullName, email, role = 'user' }) {
+  await addDoc(collection(db, 'users'), {
+    fullName,
+    email,
+    role,
+    createdAt: serverTimestamp(),
+  });
 }

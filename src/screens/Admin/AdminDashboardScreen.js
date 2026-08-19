@@ -1,101 +1,118 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
-import { useAuth } from '../../context/AuthContext';
 import * as adminService from '../../services/firebase/adminService';
+import * as diseasesService from '../../services/firebase/diseasesService';
+import AdminHeader from '../../components/AdminHeader';
+import DonutChart from '../../components/charts/DonutChart';
+import LineAreaChart from '../../components/charts/LineAreaChart';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
-import { showAlert } from '../../utils/showAlert';
+import {
+  DISEASE_DISTRIBUTION,
+  MODEL_VERSIONS,
+  RECENT_ACTIVITY,
+  SCAN_VOLUME_TREND,
+} from '../../utils/adminMockData';
 
-export default function AdminDashboardScreen({ navigation }) {
+// Home tab of the Admin Control Center bottom tab bar. Total Users / Total
+// Scans / Diseases come from live Firestore subscriptions; the scan-volume
+// trend, disease distribution, and recent-activity feed are placeholder
+// data (see adminMockData.js) until an activity-log collection exists.
+export default function AdminDashboardScreen() {
   const { colors } = useTheme();
-  const { signOutUser } = useAuth();
   const [userCount, setUserCount] = useState(0);
-  const [adminCount, setAdminCount] = useState(0);
   const [scanCount, setScanCount] = useState(0);
+  const [diseaseCount, setDiseaseCount] = useState(DISEASE_DISTRIBUTION.length);
+  const activeModel = MODEL_VERSIONS.find((m) => m.status === 'Active') || MODEL_VERSIONS[0];
 
   useEffect(() => {
     const unsubscribeUsers = adminService.subscribeToAllUsers((users) => {
       setUserCount(users.length);
-      setAdminCount(users.filter((u) => u.role === 'admin').length);
     });
     const unsubscribeScans = adminService.subscribeToAllScans((scans) => {
       setScanCount(scans.length);
     });
+    const unsubscribeDiseases = diseasesService.subscribeToAllDiseases((diseases) => {
+      if (diseases.length > 0) setDiseaseCount(diseases.length);
+    });
     return () => {
       unsubscribeUsers();
       unsubscribeScans();
+      unsubscribeDiseases();
     };
   }, []);
 
-  const handleSignOut = () => {
-    showAlert('Sign out?', 'You can sign back in anytime.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: signOutUser },
-    ]);
-  };
-
   const stats = [
-    { label: 'Total Users', value: userCount, icon: 'people-outline' },
-    { label: 'Admins', value: adminCount, icon: 'shield-checkmark-outline' },
-    { label: 'Total Scans', value: scanCount, icon: 'scan-outline' },
+    { label: 'Total Users', value: String(userCount), icon: 'people-outline' },
+    { label: 'Total Scans', value: String(scanCount), icon: 'scan-outline' },
+    { label: 'Diseases', value: `${diseaseCount} tracked`, icon: 'leaf-outline' },
+    { label: 'Model', value: `${activeModel.version} · ${activeModel.accuracy}% acc`, icon: 'extension-puzzle-outline' },
   ];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={[styles.title, { color: colors.textPrimary }]}>Admin Dashboard</Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              OrchidVision overview
-            </Text>
-          </View>
-          <TouchableOpacity onPress={handleSignOut}>
-            <Ionicons name="log-out-outline" size={24} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
+        <AdminHeader title="Dashboard" subtitle="System overview & activity" />
 
-        <View style={styles.statsRow}>
+        <View style={styles.statsGrid}>
           {stats.map((stat) => (
             <View key={stat.label} style={[styles.statCard, { backgroundColor: colors.surface }]}>
-              <Ionicons name={stat.icon} size={22} color={colors.primary} />
+              <View style={styles.statCardHeader}>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{stat.label}</Text>
+                <Ionicons name={stat.icon} size={16} color={colors.textSecondary} />
+              </View>
               <Text style={[styles.statValue, { color: colors.textPrimary }]}>{stat.value}</Text>
-              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{stat.label}</Text>
             </View>
           ))}
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Manage</Text>
+        <View style={[styles.card, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Scan Volume - 8 months</Text>
+          <LineAreaChart data={SCAN_VOLUME_TREND} color={colors.primary} yMax={1400} textColor={colors.textSecondary} />
+        </View>
 
-        <TouchableOpacity
-          style={[styles.navCard, { backgroundColor: colors.surface }]}
-          onPress={() => navigation.navigate('AdminUsers')}
-        >
-          <Ionicons name="people-outline" size={20} color={colors.primary} />
-          <View style={styles.navCardText}>
-            <Text style={[styles.navCardTitle, { color: colors.textPrimary }]}>Manage Users</Text>
-            <Text style={[styles.navCardSubtitle, { color: colors.textSecondary }]}>
-              View, edit roles, or remove accounts
-            </Text>
+        <View style={[styles.card, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Disease Distribution</Text>
+          <View style={styles.donutRow}>
+            <DonutChart data={DISEASE_DISTRIBUTION} size={120} strokeWidth={20} />
+            <View style={styles.legend}>
+              {DISEASE_DISTRIBUTION.map((item) => (
+                <View key={item.label} style={styles.legendRow}>
+                  <View style={styles.legendLeft}>
+                    <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+                    <Text style={[styles.legendLabel, { color: colors.textPrimary }]}>{item.label}</Text>
+                  </View>
+                  <Text style={[styles.legendValue, { color: colors.textSecondary }]}>{item.value}%</Text>
+                </View>
+              ))}
+            </View>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-        </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          style={[styles.navCard, { backgroundColor: colors.surface }]}
-          onPress={() => navigation.navigate('AdminContent')}
-        >
-          <Ionicons name="leaf-outline" size={20} color={colors.primary} />
-          <View style={styles.navCardText}>
-            <Text style={[styles.navCardTitle, { color: colors.textPrimary }]}>Manage Content</Text>
-            <Text style={[styles.navCardSubtitle, { color: colors.textSecondary }]}>
-              Review and remove scan records
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-        </TouchableOpacity>
+        <View style={[styles.card, { backgroundColor: colors.surface }]}>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Recent Activity</Text>
+          {RECENT_ACTIVITY.map((item, index) => (
+            <View
+              key={item.id}
+              style={[
+                styles.activityRow,
+                index < RECENT_ACTIVITY.length - 1 && [styles.activityDivider, { borderColor: colors.border }],
+              ]}
+            >
+              <View style={[styles.activityIcon, { backgroundColor: colors.background }]}>
+                <Ionicons name={item.icon} size={16} color={colors.primary} />
+              </View>
+              <View style={styles.activityText}>
+                <Text style={[styles.activityName, { color: colors.textPrimary }]}>
+                  {item.name} <Text style={{ fontWeight: '400' }}>· {item.action}</Text>
+                </Text>
+              </View>
+              <Text style={[styles.activityTime, { color: colors.textSecondary }]}>{item.time}</Text>
+            </View>
+          ))}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -103,49 +120,56 @@ export default function AdminDashboardScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scroll: { padding: SPACING.xl },
-  headerRow: {
+  scroll: { paddingBottom: SPACING.xxl },
+  statsGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: SPACING.xl,
-  },
-  title: { ...TYPOGRAPHY.h1 },
-  subtitle: { ...TYPOGRAPHY.body },
-  statsRow: {
-    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: SPACING.xl,
     gap: SPACING.md,
-    marginBottom: SPACING.xl,
   },
   statCard: {
-    flex: 1,
+    flexBasis: '47%',
+    flexGrow: 1,
     borderRadius: RADIUS.lg,
     padding: SPACING.md,
-    alignItems: 'flex-start',
-  },
-  statValue: {
-    ...TYPOGRAPHY.h2,
-    marginTop: SPACING.sm,
-  },
-  statLabel: {
-    ...TYPOGRAPHY.caption,
-  },
-  sectionLabel: {
-    ...TYPOGRAPHY.caption,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
     marginBottom: SPACING.sm,
   },
-  navCard: {
+  statCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statLabel: { ...TYPOGRAPHY.caption },
+  statValue: { ...TYPOGRAPHY.h2, marginTop: SPACING.sm },
+  card: {
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginHorizontal: SPACING.xl,
+    marginTop: SPACING.md,
+  },
+  cardTitle: { ...TYPOGRAPHY.body, fontWeight: '700', marginBottom: SPACING.md },
+  donutRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.lg },
+  legend: { flex: 1, gap: SPACING.sm },
+  legendRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  legendLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendLabel: { ...TYPOGRAPHY.caption },
+  legendValue: { ...TYPOGRAPHY.caption, fontWeight: '700' },
+  activityRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
-    marginBottom: SPACING.sm,
+    paddingVertical: SPACING.sm,
     gap: SPACING.sm,
   },
-  navCardText: { flex: 1 },
-  navCardTitle: { ...TYPOGRAPHY.body, fontWeight: '600' },
-  navCardSubtitle: { ...TYPOGRAPHY.caption },
+  activityDivider: { borderBottomWidth: StyleSheet.hairlineWidth },
+  activityIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: RADIUS.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityText: { flex: 1 },
+  activityName: { ...TYPOGRAPHY.caption, fontWeight: '700' },
+  activityTime: { ...TYPOGRAPHY.caption },
 });
