@@ -42,11 +42,6 @@
       ],
       "expo-web-browser",
       "react-native-fast-tflite"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "461515ed-1dcb-434a-821c-c87c2d509c9b"
-      }
-    }
+    ]
   }
 }

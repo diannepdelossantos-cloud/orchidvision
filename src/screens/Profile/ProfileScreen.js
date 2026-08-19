@@ -14,6 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import AuthTextField from '../../components/AuthTextField';
 import PrimaryButton from '../../components/PrimaryButton';
 import DangerButton from '../../components/DangerButton';
+import HistoryTab from './HistoryTab';
+import RestoreScreen from './RestoreScreen';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useProfile } from '../../context/ProfileContext';
@@ -27,6 +29,11 @@ function getInitials(fullName) {
   return (words[0][0] + (words[1]?.[0] || '')).toUpperCase();
 }
 
+const TABS = [
+  { key: 'account', label: 'Account', icon: 'person-outline' },
+  { key: 'history', label: 'History', icon: 'time-outline' },
+];
+
 export default function ProfileScreen() {
   const { colors } = useTheme();
   const { user, signOutUser } = useAuth();
@@ -38,6 +45,9 @@ export default function ProfileScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
+  const [activeTab, setActiveTab] = useState('account');
+  const [showRestore, setShowRestore] = useState(false);
+
   // Seed the editable fields once the Firestore document arrives; profile
   // updates from elsewhere (another device/tab) also flow through here.
   useEffect(() => {
@@ -46,6 +56,11 @@ export default function ProfileScreen() {
     setLocation(profile.location || '');
     setStationId(profile.stationId || '');
   }, [profile]);
+
+  const selectTab = (tabKey) => {
+    setActiveTab(tabKey);
+    setShowRestore(false);
+  };
 
   const handlePickAvatar = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -102,87 +117,129 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={[styles.title, { color: colors.textPrimary }]}>Profile</Text>
+        <View style={styles.titleRow}>
+          {showRestore && (
+            <TouchableOpacity
+              onPress={() => setShowRestore(false)}
+              style={styles.backButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+            </TouchableOpacity>
+          )}
+          <Text style={[styles.title, { color: colors.textPrimary }]}>Profile</Text>
+        </View>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           Manage your OrchidVision account
         </Text>
 
-        <View style={[styles.headerCard, { backgroundColor: colors.surface }]}>
-          <View style={styles.avatarWrap}>
-            {profile.photoURL ? (
-              <Image source={{ uri: profile.photoURL }} style={styles.avatarImage} />
-            ) : (
-              <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
-                <Text style={styles.avatarInitials}>{getInitials(profile.fullName)}</Text>
-              </View>
-            )}
-            <TouchableOpacity
-              style={[styles.avatarBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}
-              onPress={handlePickAvatar}
-              disabled={isUploadingAvatar}
-            >
-              {isUploadingAvatar ? (
-                <ActivityIndicator size="small" color={colors.textInverse} />
-              ) : (
-                <Ionicons name="camera" size={14} color={colors.textInverse} />
-              )}
-            </TouchableOpacity>
-          </View>
-
-          <Text style={[styles.name, { color: colors.textPrimary }]}>{profile.fullName}</Text>
-          <Text style={[styles.email, { color: colors.textSecondary }]}>{user?.email}</Text>
-
-          {!!profile.stationId && (
-            <View style={[styles.stationBadge, { borderColor: colors.primary }]}>
-              <Text style={[styles.stationBadgeText, { color: colors.primary }]}>{profile.stationId}</Text>
-            </View>
-          )}
+        <View style={styles.tabRow}>
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[
+                  styles.tabButton,
+                  isActive
+                    ? { backgroundColor: colors.primary }
+                    : { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+                ]}
+                onPress={() => selectTab(tab.key)}
+              >
+                <Ionicons name={tab.icon} size={16} color={isActive ? colors.textInverse : colors.textSecondary} />
+                <Text style={[styles.tabButtonText, { color: isActive ? colors.textInverse : colors.textSecondary }]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Account Info</Text>
+        {showRestore ? (
+          <RestoreScreen colors={colors} />
+        ) : activeTab === 'history' ? (
+          <HistoryTab colors={colors} onOpenRestore={() => setShowRestore(true)} />
+        ) : (
+          <>
+            <View style={[styles.headerCard, { backgroundColor: colors.surface }]}>
+              <View style={styles.avatarWrap}>
+                {profile.photoURL ? (
+                  <Image source={{ uri: profile.photoURL }} style={styles.avatarImage} />
+                ) : (
+                  <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
+                    <Text style={styles.avatarInitials}>{getInitials(profile.fullName)}</Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={[styles.avatarBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}
+                  onPress={handlePickAvatar}
+                  disabled={isUploadingAvatar}
+                >
+                  {isUploadingAvatar ? (
+                    <ActivityIndicator size="small" color={colors.textInverse} />
+                  ) : (
+                    <Ionicons name="camera" size={14} color={colors.textInverse} />
+                  )}
+                </TouchableOpacity>
+              </View>
 
-        <AuthTextField
-          label="Full Name"
-          icon="person-outline"
-          value={fullName}
-          onChangeText={setFullName}
-          autoCapitalize="words"
-          colors={colors}
-        />
-        <AuthTextField
-          label="Email"
-          icon="mail-outline"
-          value={user?.email || ''}
-          editable={false}
-          colors={colors}
-        />
-        <AuthTextField
-          label="Location"
-          icon="location-outline"
-          value={location}
-          onChangeText={setLocation}
-          placeholder="e.g. Greenhouse A"
-          colors={colors}
-        />
-        <AuthTextField
-          label="Station ID"
-          icon="pricetag-outline"
-          value={stationId}
-          onChangeText={setStationId}
-          placeholder="e.g. Lab Station #1"
-          colors={colors}
-        />
+              <Text style={[styles.name, { color: colors.textPrimary }]}>{profile.fullName}</Text>
+              <Text style={[styles.email, { color: colors.textSecondary }]}>{user?.email}</Text>
 
-        <PrimaryButton title="Save changes" onPress={handleSave} loading={isSaving} colors={colors} />
+              {!!profile.stationId && (
+                <View style={[styles.stationBadge, { borderColor: colors.primary }]}>
+                  <Text style={[styles.stationBadgeText, { color: colors.primary }]}>{profile.stationId}</Text>
+                </View>
+              )}
+            </View>
 
-        <DangerButton
-          title="Sign Out"
-          icon="log-out-outline"
-          variant="outline"
-          onPress={handleSignOut}
-          colors={colors}
-          style={styles.signOutButton}
-        />
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Account Info</Text>
+
+            <AuthTextField
+              label="Full Name"
+              icon="person-outline"
+              value={fullName}
+              onChangeText={setFullName}
+              autoCapitalize="words"
+              colors={colors}
+            />
+            <AuthTextField
+              label="Email"
+              icon="mail-outline"
+              value={user?.email || ''}
+              editable={false}
+              colors={colors}
+            />
+            <AuthTextField
+              label="Location"
+              icon="location-outline"
+              value={location}
+              onChangeText={setLocation}
+              placeholder="e.g. Greenhouse A"
+              colors={colors}
+            />
+            <AuthTextField
+              label="Station ID"
+              icon="pricetag-outline"
+              value={stationId}
+              onChangeText={setStationId}
+              placeholder="e.g. Lab Station #1"
+              colors={colors}
+            />
+
+            <PrimaryButton title="Save changes" onPress={handleSave} loading={isSaving} colors={colors} />
+
+            <DangerButton
+              title="Sign Out"
+              icon="log-out-outline"
+              variant="outline"
+              onPress={handleSignOut}
+              colors={colors}
+              style={styles.signOutButton}
+            />
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -199,12 +256,37 @@ const styles = StyleSheet.create({
   scroll: {
     padding: SPACING.xl,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backButton: {
+    marginRight: SPACING.sm,
+  },
   title: {
     ...TYPOGRAPHY.h1,
   },
   subtitle: {
     ...TYPOGRAPHY.body,
     marginBottom: SPACING.lg,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginBottom: SPACING.xl,
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: RADIUS.pill,
+    paddingVertical: SPACING.sm,
+  },
+  tabButtonText: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '700',
+    marginLeft: 6,
   },
   headerCard: {
     alignItems: 'center',

@@ -6,6 +6,7 @@ import SplashScreen from '../screens/Splash/SplashScreen';
 import OnboardingScreen from '../screens/Onboarding/OnboardingScreen';
 import PermissionsScreen from '../screens/Permissions/PermissionsScreen';
 import SignInScreen from '../screens/Auth/SignIn/SignInScreen';
+import TwoFactorScreen from '../screens/Auth/TwoFactor/TwoFactorScreen';
 import RegisterScreen from '../screens/Auth/Register/RegisterScreen';
 import ForgotPasswordScreen from '../screens/Auth/ForgotPassword/ForgotPasswordScreen';
 import ResetPasswordScreen from '../screens/Auth/ResetPassword/ResetPasswordScreen';
