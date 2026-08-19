@@ -15,8 +15,10 @@ export const COLORS = {
   textInverseMuted: 'rgba(255,255,255,0.75)',
   border: '#E0E0E0',
   error: '#E53935',
+  danger: '#E53935',
   success: '#4CAF50',
   warning: '#FF9800',
+  info: '#2196F3',
 };
 
 // Dark-mode counterpart, consumed via ThemeContext (see src/context/ThemeContext.js).
@@ -36,8 +38,10 @@ export const DARK_COLORS = {
   textInverseMuted: 'rgba(255,255,255,0.75)',
   border: '#33362F',
   error: '#EF5350',
+  danger: '#EF5350',
   success: '#66BB6A',
   warning: '#FFA726',
+  info: '#42A5F5',
 };
 
 export const SPACING = {
@@ -64,6 +68,29 @@ export const TYPOGRAPHY = {
   caption: { fontSize: 13, fontWeight: '400' },
   button: { fontSize: 16, fontWeight: '700' },
 };
+
+// Admin Control Center tag colors — soft background + matching text, used
+// for disease category / severity chips, status pills, and log-level tags
+// across the Admin screens (Users, Diseases, Data, Monitor).
+export const TAG_COLORS = {
+  fungal: { bg: '#EDE7F6', text: '#6A1B9A' },
+  bacterial: { bg: '#FFF3E0', text: '#EF6C00' },
+  viral: { bg: '#E3F2FD', text: '#1565C0' },
+  mild: { bg: '#E8F5E9', text: '#2E7D32' },
+  moderate: { bg: '#FFF3E0', text: '#EF6C00' },
+  severe: { bg: '#FDECEA', text: '#C62828' },
+  active: { bg: '#E8F5E9', text: '#2E7D32' },
+  inactive: { bg: '#F1F1EF', text: '#6B7280' },
+  admin: { bg: '#152713', text: '#FFFFFF' },
+  user: { bg: '#FFFFFF', text: '#6B7280' },
+  error: { bg: '#FDECEA', text: '#C62828' },
+  warn: { bg: '#FFF3E0', text: '#EF6C00' },
+  info: { bg: '#E3F2FD', text: '#1565C0' },
+};
+
+// Fixed palette for chart series (disease distribution donut, etc.) so
+// colors stay consistent between the legend and the chart itself.
+export const CHART_COLORS = ['#E57373', '#FFB74D', '#64B5F6', '#9575CD', '#81C784', '#4DB6AC'];
 
 export const SHADOW = {
   soft: {
