@@ -6,6 +6,7 @@ import SplashScreen from '../screens/Splash/SplashScreen';
 import OnboardingScreen from '../screens/Onboarding/OnboardingScreen';
 import PermissionsScreen from '../screens/Permissions/PermissionsScreen';
 import SignInScreen from '../screens/Auth/SignIn/SignInScreen';
+import AdminSignInScreen from '../screens/Auth/AdminSignIn/AdminSignInScreen';
 import TwoFactorScreen from '../screens/Auth/TwoFactor/TwoFactorScreen';
 import RegisterScreen from '../screens/Auth/Register/RegisterScreen';
 import ForgotPasswordScreen from '../screens/Auth/ForgotPassword/ForgotPasswordScreen';
@@ -19,11 +20,15 @@ const Stack = createNativeStackNavigator();
 
 // Lets a password-reset email link (orchidvision://reset-password?oobCode=...)
 // open directly on the Reset Password screen instead of a Firebase-hosted page.
+//
+// orchidvision://admin opens the Control Center sign-in directly, as an
+// alternative to the long-press entrance on SignInScreen's logo.
 const linking = {
   prefixes: [Linking.createURL('/'), 'orchidvision://'],
   config: {
     screens: {
       ResetPassword: 'reset-password',
+      AdminSignIn: 'admin',
     },
   },
 };
@@ -50,6 +55,11 @@ export default function AppNavigator() {
             <Stack.Screen name="Onboarding" component={OnboardingScreen} />
             <Stack.Screen name="Permissions" component={PermissionsScreen} />
             <Stack.Screen name="SignIn" component={SignInScreen} />
+            {/* Separate door for Control Center accounts, with no visible
+                link pointing at it. Each sign-in screen turns away the
+                other account type, so admins and users never share a
+                usable entry point. */}
+            <Stack.Screen name="AdminSignIn" component={AdminSignInScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
             <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />

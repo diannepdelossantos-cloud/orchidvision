@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { getAuth } from 'firebase/auth';
+import { doc, getDoc, getFirestore } from 'firebase/firestore';
 import AuthTextField from '../../../components/AuthTextField';
 import PrimaryButton from '../../../components/PrimaryButton';
 import GoogleButton from '../../../components/GoogleButton';
@@ -20,7 +22,7 @@ import { isValidEmail } from '../../../utils/validators';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../../../utils/theme';
 
 export default function SignInScreen({ navigation }) {
-  const { signIn } = useAuth();
+  const { signIn, signOutUser } = useAuth();
   const google = useGoogleSignIn();
 
   const [email, setEmail] = useState('');
@@ -32,6 +34,11 @@ export default function SignInScreen({ navigation }) {
   // Once signIn() resolves, AuthContext's onAuthStateChanged listener flips
   // `user` to a non-null value, and AppNavigator (auth-gated) swaps the
   // whole stack over to Home on its own — no explicit navigate() needed here.
+  //
+  // Admin accounts are turned away: they have their own entrance at
+  // AdminSignInScreen, so this screen signs them straight back out. The
+  // role is read from Firestore rather than from context because context
+  // has not resolved it yet at this point in the flow.
   const handleSignIn = async () => {
     setFormError(null);
 
@@ -44,6 +51,16 @@ export default function SignInScreen({ navigation }) {
     setIsSubmitting(true);
     try {
       await signIn(email.trim(), password);
+
+      const uid = getAuth().currentUser?.uid;
+      const profile = await getDoc(doc(getFirestore(), 'users', uid));
+
+      if (profile.exists() && profile.data().role === 'admin') {
+        await signOutUser();
+        setPassword('');
+        setFormError('These credentials cannot be used here.');
+        return;
+      }
     } catch (error) {
       setFormError(getAuthErrorMessage(error));
     } finally {
@@ -55,9 +72,22 @@ export default function SignInScreen({ navigation }) {
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.header}>
-          <View style={styles.logoBadge}>
-            <Ionicons name="leaf" size={34} color={COLORS.textInverse} />
-          </View>
+          {/* Hidden entrance to the Control Center: a 1.2s long-press on
+              the logo. activeOpacity={1} suppresses the press highlight so
+              the logo gives no hint that it is interactive. This is
+              obscurity, not access control — AdminSignInScreen still
+              rejects non-admin credentials, and firestore.rules refuses
+              admin data to non-admin accounts regardless of which screen
+              asked for it. */}
+          <TouchableOpacity
+            activeOpacity={1}
+            delayLongPress={1200}
+            onLongPress={() => navigation.navigate('AdminSignIn')}
+          >
+            <View style={styles.logoBadge}>
+              <Ionicons name="leaf" size={34} color={COLORS.textInverse} />
+            </View>
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Welcome back!</Text>
           <Text style={styles.headerSubtitle}>Sign in to OrchidVision</Text>
         </LinearGradient>

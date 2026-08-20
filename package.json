@@ -16,15 +16,9 @@
     "expo": "~57.0.11",
     "expo-auth-session": "~57.0.6",
     "expo-camera": "~57.0.3",
-<<<<<<< HEAD
     "expo-image-manipulator": "~57.0.7",
     "expo-image-picker": "~57.0.6",
-=======
-    "expo-dev-client": "~57.0.10",
-    "expo-image-picker": "~57.0.8",
->>>>>>> 87299738aa3cf1e49ea8f59fcc23a4a0ab2db92a
     "expo-linear-gradient": "~57.0.1",
-    "expo-linking": "~57.0.5",
     "expo-notifications": "~57.0.9",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.2",
