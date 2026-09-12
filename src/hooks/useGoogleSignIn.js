@@ -25,33 +25,15 @@ if (isNative) {
   });
 }
 
-// Wraps Google sign-in behind a single "promptAsync" call, so screens don't
-// deal with OAuth plumbing directly. Web uses expo-auth-session's
-// browser-based flow; native (dev build) uses the native Google Sign-In SDK,
-// since that's the only approach Google still allows for installed apps.
-export function useGoogleSignIn() {
+// Native (dev build / standalone app): the native Google Sign-In SDK is the
+// only approach Google still allows for installed apps. Never touches
+// expo-auth-session's browser-based flow.
+function useNativeGoogleSignIn() {
   const { signInWithGoogleIdToken } = useAuth();
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState(null);
 
-  const [webRequest, webResponse, webPromptAsync] = Google.useIdTokenAuthRequest({
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-  });
-
-  useEffect(() => {
-    if (isNative) return;
-    if (webResponse?.type !== 'success') return;
-    const idToken = webResponse.params?.id_token;
-    if (!idToken) return;
-
-    setIsSigningIn(true);
-    setError(null);
-    signInWithGoogleIdToken(idToken)
-      .catch((err) => setError(getAuthErrorMessage(err)))
-      .finally(() => setIsSigningIn(false));
-  }, [webResponse, signInWithGoogleIdToken]);
-
-  const promptNativeSignIn = useCallback(async () => {
+  const promptAsync = useCallback(async () => {
     setIsSigningIn(true);
     setError(null);
     try {
@@ -72,10 +54,38 @@ export function useGoogleSignIn() {
     }
   }, [signInWithGoogleIdToken]);
 
-  return {
-    isReady: isNative ? true : !!webRequest,
-    isSigningIn,
-    error,
-    promptAsync: isNative ? promptNativeSignIn : webPromptAsync,
-  };
+  return { isReady: true, isSigningIn, error, promptAsync };
+}
+
+// Web: expo-auth-session's browser-based flow.
+function useWebGoogleSignIn() {
+  const { signInWithGoogleIdToken } = useAuth();
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [error, setError] = useState(null);
+
+  const [webRequest, webResponse, webPromptAsync] = Google.useIdTokenAuthRequest({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  });
+
+  useEffect(() => {
+    if (webResponse?.type !== 'success') return;
+    const idToken = webResponse.params?.id_token;
+    if (!idToken) return;
+
+    setIsSigningIn(true);
+    setError(null);
+    signInWithGoogleIdToken(idToken)
+      .catch((err) => setError(getAuthErrorMessage(err)))
+      .finally(() => setIsSigningIn(false));
+  }, [webResponse, signInWithGoogleIdToken]);
+
+  return { isReady: !!webRequest, isSigningIn, error, promptAsync: webPromptAsync };
+}
+
+// Wraps Google sign-in behind a single "promptAsync" call, so screens don't
+// deal with OAuth plumbing directly. `isNative` is fixed for the lifetime of
+// the app (it's derived from Platform.OS), so switching hooks on it never
+// changes which hook runs between renders.
+export function useGoogleSignIn() {
+  return isNative ? useNativeGoogleSignIn() : useWebGoogleSignIn();
 }

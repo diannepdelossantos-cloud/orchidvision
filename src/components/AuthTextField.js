@@ -3,11 +3,7 @@ import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-nativ
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../utils/theme';
 
-// Labeled input matching the storyboard's Auth screens: uppercase label,
-// icon-left rounded field, and (for secureTextEntry fields) a built-in
-// show/hide toggle. `error` renders inline validation text below the field.
-// `colors` defaults to the static light palette (existing callers keep
-// working unchanged); theme-aware screens pass colors={useTheme().colors}.
+
 export default function AuthTextField({
   label,
   icon,
