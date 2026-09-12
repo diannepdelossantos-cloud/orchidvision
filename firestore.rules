@@ -1,0 +1,65 @@
+rules_version = '2';
+
+// OrchidVision Firestore security rules.
+//
+// These are the enforcement layer. The separate Control Center sign-in
+// screen decides which UI a person sees; these rules decide what the
+// database will hand over, whichever screen made the request.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Server-side lookup of the caller's own role. The client cannot fake
+    // this, unlike the isAdmin value held in AuthContext.
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // True when the write leaves the role field exactly as it was. This is
+    // what stops a signed-in user from promoting themselves to admin by
+    // writing role: 'admin' to their own profile document.
+    function roleUnchanged() {
+      return request.resource.data.get('role', 'user') == resource.data.get('role', 'user');
+    }
+
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+
+      // On registration nobody may hand themselves the admin role.
+      allow create: if isSignedIn()
+                    && request.auth.uid == uid
+                    && request.resource.data.get('role', 'user') != 'admin';
+
+      // Users edit their own profile but cannot change their role.
+      // Admins may change roles, which is how a new admin gets promoted.
+      allow update: if isSignedIn()
+                    && ((request.auth.uid == uid && roleUnchanged()) || isAdmin());
+
+      allow delete: if isAdmin();
+    }
+
+    match /scans/{scanId} {
+      allow read, update, delete: if isSignedIn()
+                                  && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+                    && request.resource.data.userId == request.auth.uid;
+    }
+
+    // Registered orchids (My Orchids). Same ownership shape as /scans:
+    // owner or admin can read/update/delete, and a create must be
+    // self-tagged with the caller's own uid.
+    match /orchids/{orchidId} {
+      allow read, update, delete: if isSignedIn()
+                                  && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+                    && request.resource.data.userId == request.auth.uid;
+    }
+
+    // Anything not matched above is denied.
+  }
+}

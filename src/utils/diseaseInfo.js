@@ -63,17 +63,6 @@ export const DISEASE_INFO = {
       'Maintain current watering and light. Check the undersides of leaves monthly for early symptoms.',
   },
 
-healthy: {
-  displayName: 'Healthy',
-  status: 'Healthy',
-  isHealthy: true,
-  tags: ['No visible symptoms'],
-  severity: 0,
-  treatment: 'No treatment needed.',
-  prevention:
-    'Maintain current watering and light. Check the undersides of leaves monthly for early symptoms.',
-},
-
   not_orchid: {
     displayName: 'Not an orchid',
     status: 'Unrecognised',

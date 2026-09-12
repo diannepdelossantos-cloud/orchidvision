@@ -5,14 +5,15 @@ import { Ionicons } from '@expo/vector-icons';
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 import ScanScreen from '../screens/Main/ScanScreen';
+import MyOrchidsNavigator from '../navigation/MyOrchidsNavigator';
 import { useTheme } from '../context/ThemeContext';
 import { SPACING, TYPOGRAPHY } from '../utils/theme';
 
 const Tab = createBottomTabNavigator();
 
-// My Orchids and OrchAi belong to other teammates' modules — these
-// are placeholders so the tab bar matches the storyboard now, the same way
-// Module 1's AppNavigator stubbed out Permissions/Sign In before they existed.
+// OrchAi belongs to another teammate's module — this is a placeholder so
+// the tab bar matches the storyboard now, the same way Module 1's
+// AppNavigator stubbed out Permissions/Sign In before they existed.
 function ComingSoonScreen({ label, colors }) {
   return (
     <View style={[styles.placeholder, { backgroundColor: colors.background }]}>
@@ -40,13 +41,12 @@ export default function MainTabNavigator() {
       />
       <Tab.Screen
         name="MyOrchids"
+        component={MyOrchidsNavigator}
         options={{
           title: 'My Orchids',
           tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" size={size} color={color} />,
         }}
-      >
-        {() => <ComingSoonScreen label="My Orchids — coming soon" colors={colors} />}
-      </Tab.Screen>
+      />
       <Tab.Screen
         name="Scan"
         component={ScanScreen}

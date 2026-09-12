@@ -13,17 +13,24 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { predictDisease } from '../../services/predictionService';
 import ScanResultCard from '../../components/ScanResultCard';
+import SaveOrchidModal from '../../components/SaveOrchidModal';
 import { useScanHistory } from '../../context/ScanHistoryContext';
+import { useAuth } from '../../context/AuthContext';
+import * as orchidService from '../../services/firebase/orchidService';
+import { TARGET_SPECIES } from '../../utils/diseaseInfo';
+import { showAlert } from '../../utils/showAlert';
 
 // Must match the <Tab.Screen name="..."> in MainTabNavigator.js exactly.
-const MY_ORCHIDS_ROUTE = 'My Orchids';
+const MY_ORCHIDS_ROUTE = 'MyOrchids';
 
 export default function ScanScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
+  const { user } = useAuth();
   const { addScanRecord } = useScanHistory();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -35,7 +42,20 @@ export default function ScanScreen() {
   const [loading, setLoading] = useState(false);
   const [notOrchidWarning, setNotOrchidWarning] = useState(null);
 
+  const [saveModalVisible, setSaveModalVisible] = useState(false);
+  const [savingOrchid, setSavingOrchid] = useState(false);
+
+  // Set when arriving here via an orchid's "Scan this orchid now" button, so
+  // Save attaches to that existing orchid instead of registering a new one.
+  // Consumed once from the route params (then cleared) so a later, unrelated
+  // visit to this tab doesn't silently keep targeting the same orchid.
+  const [targetOrchid, setTargetOrchid] = useState(null);
+
   const cameraRef = useRef(null);
+  // Holds the in-flight/resolved { id, imageUrl } promise from
+  // addScanRecord for the current result, so Save can reuse the already-
+  // uploaded photo instead of re-uploading it.
+  const scanRecordPromiseRef = useRef(null);
 
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) {
@@ -43,10 +63,19 @@ export default function ScanScreen() {
     }
   }, [permission]);
 
+  useEffect(() => {
+    if (route.params?.orchidId) {
+      setTargetOrchid({ id: route.params.orchidId, nickname: route.params.orchidNickname });
+      navigation.setParams({ orchidId: undefined, orchidNickname: undefined });
+    }
+  }, [route.params?.orchidId]);
+
   const resetAll = () => {
     setResult(null);
     setLoading(false);
     setNotOrchidWarning(null);
+    setSaveModalVisible(false);
+    scanRecordPromiseRef.current = null;
   };
 
   const takePhoto = async () => {
@@ -83,13 +112,17 @@ export default function ScanScreen() {
       } else {
         setResult(prediction);
         // Saving to history is best-effort — a failure here shouldn't hide
-        // the result the user just waited for.
-        addScanRecord({
+        // the result the user just waited for. The Save-to-My-Orchids flow
+        // awaits this same promise so it can reuse the uploaded photo
+        // instead of uploading it a second time.
+        const recordPromise = addScanRecord({
           label: prediction.top.label,
           confidence: prediction.top.score,
           imageUri: uri,
           source,
-        }).catch(() => {});
+        });
+        scanRecordPromiseRef.current = recordPromise;
+        recordPromise.catch(() => {});
       }
     } catch (e) {
       Alert.alert('Scan failed', 'The image could not be analyzed. Try again.');
@@ -115,6 +148,58 @@ export default function ScanScreen() {
   const backToCamera = () => {
     resetAll();
     setCapturedImage(null);
+  };
+
+  const handleSaveOrchid = async ({ nickname, speciesName }) => {
+    setSavingOrchid(true);
+    try {
+      let record;
+      try {
+        record = await scanRecordPromiseRef.current;
+      } catch (e) {
+        console.error('[ScanScreen] scan history record failed', { code: e?.code, message: e?.message });
+        throw e;
+      }
+      await orchidService.createOrchid(user.uid, {
+        nickname,
+        speciesName,
+        scanId: record?.id,
+        imageUrl: record?.imageUrl,
+        label: result.top.label,
+        confidence: result.top.score,
+      });
+      setSaveModalVisible(false);
+      showAlert('Saved', `${nickname} was added to My Orchids.`);
+    } catch (e) {
+      showAlert('Could not save', e?.message || 'Please try again.');
+    } finally {
+      setSavingOrchid(false);
+    }
+  };
+
+  const handleAttachToOrchid = async () => {
+    setSavingOrchid(true);
+    try {
+      let record;
+      try {
+        record = await scanRecordPromiseRef.current;
+      } catch (e) {
+        console.error('[ScanScreen] scan history record failed', { code: e?.code, message: e?.message });
+        throw e;
+      }
+      await orchidService.attachScanToOrchid(user.uid, targetOrchid.id, {
+        scanId: record?.id,
+        imageUrl: record?.imageUrl,
+        label: result.top.label,
+        confidence: result.top.score,
+      });
+      showAlert('Saved', `Scan added to ${targetOrchid.nickname}.`);
+      setTargetOrchid(null);
+    } catch (e) {
+      showAlert('Could not save', e?.message || 'Please try again.');
+    } finally {
+      setSavingOrchid(false);
+    }
   };
 
   if (!permission) return <View style={styles.container} />;
@@ -165,10 +250,26 @@ export default function ScanScreen() {
               <Ionicons name="camera" size={16} color="#fff" />
               <Text style={styles.capturePillText}>Capture new image</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.savePill}
+              onPress={targetOrchid ? handleAttachToOrchid : () => setSaveModalVisible(true)}
+              disabled={savingOrchid}
+            >
+              <Ionicons name="bookmark-outline" size={16} color="#fff" />
+              <Text style={styles.savePillText}>{targetOrchid ? `Save to ${targetOrchid.nickname}` : 'Save'}</Text>
+            </TouchableOpacity>
           </View>
 
           <ScanResultCard result={result} />
         </ScrollView>
+
+        <SaveOrchidModal
+          visible={saveModalVisible}
+          defaultSpeciesName={TARGET_SPECIES}
+          saving={savingOrchid}
+          onClose={() => setSaveModalVisible(false)}
+          onSubmit={handleSaveOrchid}
+        />
       </View>
     );
   }
@@ -195,10 +296,22 @@ export default function ScanScreen() {
             Vanda sanderiana · Health Detection
           </Text>
         </View>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={goToMyOrchids}>
           <Ionicons name="close" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      {!!targetOrchid && (
+        <View style={styles.targetBanner}>
+          <Ionicons name="flower-outline" size={14} color="#fff" />
+          <Text style={styles.targetBannerText} numberOfLines={1}>
+            Adding scan to {targetOrchid.nickname}
+          </Text>
+          <TouchableOpacity onPress={() => setTargetOrchid(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="close-circle" size={16} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
 
       <View style={styles.frameWrap}>
         <View style={styles.frame}>
@@ -294,6 +407,21 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
   headerSubtitle: { color: '#d0d0d0', fontSize: 12, marginTop: 2 },
 
+  targetBanner: {
+    position: 'absolute',
+    top: 96,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(46,125,50,0.9)',
+    borderRadius: 18,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    zIndex: 10,
+  },
+  targetBannerText: { color: '#fff', fontSize: 12, fontWeight: '600', flex: 1, marginHorizontal: 6 },
+
   flashButton: { position: 'absolute', top: 110, alignSelf: 'center' },
 
   frameWrap: { position: 'absolute', top: '25%', left: 0, right: 0, alignItems: 'center' },
@@ -380,6 +508,18 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   capturePillText: { color: '#fff', fontSize: 13, fontWeight: '600', marginLeft: 6 },
+  savePill: {
+    position: 'absolute',
+    right: -4,
+    bottom: -16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4CAF50',
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 22,
+  },
+  savePillText: { color: '#fff', fontSize: 13, fontWeight: '600', marginLeft: 6 },
 
   // Modal
   modalBackdrop: {

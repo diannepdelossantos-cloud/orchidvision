@@ -86,6 +86,8 @@ async function nextScanName(uid) {
 // text/status via DISEASE_INFO the same way ScanResultCard already does.
 // `plantName` duplicates `name` under the field AdminContentScreen reads, so
 // admins see a real title instead of falling back to "Scan result".
+// Returns { id, imageUrl } so callers (e.g. the "Save to My Orchids" flow)
+// can reuse the already-uploaded photo instead of re-uploading it.
 export async function createScanRecord(uid, { label, confidence, imageUri, source }) {
   const scanRef = doc(scansCollection());
   const [name, imageUrl] = await Promise.all([
@@ -101,11 +103,12 @@ export async function createScanRecord(uid, { label, confidence, imageUri, sourc
     confidence,
     imageUrl,
     source,
+    orchidId: null,
     createdAt: serverTimestamp(),
     deletedAt: null,
   });
 
-  return scanRef.id;
+  return { id: scanRef.id, imageUrl };
 }
 
 export async function softDeleteScanRecord(uid, scanId) {

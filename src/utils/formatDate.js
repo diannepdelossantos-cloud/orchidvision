@@ -15,6 +15,14 @@ export function formatScanDate(value) {
   return `${day} • ${time}`;
 }
 
+// Date-only variant of formatScanDate, used where the row already has its
+// own sense of recency (e.g. My Orchids' "Last Scan: <date>" line).
+export function formatShortDate(value) {
+  const date = toDate(value);
+  if (!date) return 'Just now';
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
 export function formatDeletedDate(value) {
   const date = toDate(value);
   if (!date) return 'Deleted just now';
