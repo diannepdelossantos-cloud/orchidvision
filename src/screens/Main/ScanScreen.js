@@ -125,7 +125,8 @@ export default function ScanScreen() {
         recordPromise.catch(() => {});
       }
     } catch (e) {
-      Alert.alert('Scan failed', 'The image could not be analyzed. Try again.');
+      console.error('[ScanScreen] predictDisease failed', { code: e?.code, message: e?.message });
+      Alert.alert('Scan failed', e?.message || 'The image could not be analyzed. Try again.');
       setCapturedImage(null);
     } finally {
       setLoading(false);
