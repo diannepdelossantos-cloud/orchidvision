@@ -10,8 +10,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import * as orchidService from '../../services/firebase/orchidService';
 import { humanizeLabel, isHealthyLabel } from '../../utils/diseaseInfo';
-import { useDiseaseInfo } from '../../hooks/useDiseaseInfo';
-import { SEVERITY_COLORS, SEVERITY_ORDER } from '../../utils/severity';
 import { formatScanDate } from '../../utils/formatDate';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
 
@@ -51,7 +49,6 @@ export default function OrchidDetailScreen({ route, navigation }) {
   const { orchidId } = route.params;
   const { colors } = useTheme();
   const { user } = useAuth();
-  const diseaseByLabel = useDiseaseInfo();
 
   const [orchid, setOrchid] = useState(null);
   const [scans, setScans] = useState([]);
@@ -101,8 +98,6 @@ export default function OrchidDetailScreen({ route, navigation }) {
   }
 
   const isHealthy = isHealthyLabel(orchid.lastLabel);
-  const diseaseEntry = diseaseByLabel[orchid.lastLabel];
-  const severityIndex = diseaseEntry ? SEVERITY_ORDER.indexOf(diseaseEntry.severity) : -1;
   const confidencePct = `${((orchid.lastConfidence || 0) * 100).toFixed(0)}%`;
 
   return (
@@ -134,12 +129,6 @@ export default function OrchidDetailScreen({ route, navigation }) {
             colors={colors}
           />
           <StatBox label="Confidence" value={confidencePct} colors={colors} />
-          <StatBox
-            label="Severity"
-            value={diseaseEntry?.severity || '—'}
-            valueColor={severityIndex >= 0 ? SEVERITY_COLORS[diseaseEntry.severity] : undefined}
-            colors={colors}
-          />
         </View>
 
         <View style={styles.imageWrap}>
@@ -156,19 +145,11 @@ export default function OrchidDetailScreen({ route, navigation }) {
           {!!orchid.lastLabel && (
             <View style={[styles.imageBadge, { backgroundColor: isHealthy ? colors.success : colors.error }]}>
               <Text style={styles.imageBadgeText}>
-                {isHealthy ? 'Healthy' : diseaseEntry?.name ?? humanizeLabel(orchid.lastLabel)} {confidencePct}
+                {isHealthy ? 'Healthy' : humanizeLabel(orchid.lastLabel)} {confidencePct}
               </Text>
             </View>
           )}
         </View>
-
-        {!!diseaseEntry?.category && (
-          <View style={styles.chipRow}>
-            <View style={[styles.chip, { backgroundColor: colors.background, borderColor: colors.border }]}>
-              <Text style={[styles.chipText, { color: colors.textSecondary }]}>{diseaseEntry.category}</Text>
-            </View>
-          </View>
-        )}
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Scan History</Text>
 
@@ -248,17 +229,6 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.sm,
   },
   imageBadgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: SPACING.lg },
-  chip: {
-    borderWidth: 1,
-    borderRadius: RADIUS.pill,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    marginRight: SPACING.xs,
-    marginBottom: SPACING.xs,
-  },
-  chipText: { ...TYPOGRAPHY.caption, fontSize: 12 },
 
   sectionLabel: {
     ...TYPOGRAPHY.caption,

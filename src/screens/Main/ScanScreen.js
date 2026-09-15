@@ -25,7 +25,6 @@ import { useScanHistory } from '../../context/ScanHistoryContext';
 import { useAuth } from '../../context/AuthContext';
 import * as orchidService from '../../services/firebase/orchidService';
 import { TARGET_SPECIES } from '../../utils/diseaseInfo';
-import { useDiseaseInfo } from '../../hooks/useDiseaseInfo';
 import { showAlert } from '../../utils/showAlert';
 
 // Must match the <Tab.Screen name="..."> in MainTabNavigator.js exactly.
@@ -36,7 +35,6 @@ export default function ScanScreen() {
   const route = useRoute();
   const { user } = useAuth();
   const { addScanRecord } = useScanHistory();
-  const diseaseByLabel = useDiseaseInfo();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedImage, setCapturedImage] = useState(null);
@@ -287,7 +285,7 @@ export default function ScanScreen() {
             </TouchableOpacity>
           </View>
 
-          <ScanResultCard result={result} diseaseEntry={diseaseByLabel[result.top.label]} />
+          <ScanResultCard result={result} />
         </ScrollView>
 
         <SaveOrchidModal

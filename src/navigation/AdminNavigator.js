@@ -4,13 +4,16 @@ import { Ionicons } from '@expo/vector-icons';
 import AdminDashboardScreen from '../screens/Admin/AdminDashboardScreen';
 import AdminUsersScreen from '../screens/Admin/AdminUsersScreen';
 import AdminContentScreen from '../screens/Admin/AdminContentScreen';
+import AdminDiseasesNavigator from './AdminDiseasesNavigator';
 
 const Tab = createBottomTabNavigator();
 
 // Bottom tab bar for the Admin Control Center. The storyboard calls for
 // five tabs (Home, Users, Diseases, Data, Monitor); Data and Monitor are
-// not built yet. Each screen builds its own AdminHeader, so tab headers
-// stay hidden here.
+// not built yet. Content (scan record moderation) isn't one of the
+// storyboard's five — it previously sat under a mislabeled "Diseases" tab
+// in place of the real Diseases screen, which was built but never wired in.
+// Each screen builds its own AdminHeader, so tab headers stay hidden here.
 export default function AdminNavigator() {
   return (
     <Tab.Navigator screenOptions={{ headerShown: false }}>
@@ -35,12 +38,22 @@ export default function AdminNavigator() {
         }}
       />
       <Tab.Screen
-        name="AdminContent"
-        component={AdminContentScreen}
+        name="AdminDiseases"
+        component={AdminDiseasesNavigator}
         options={{
           title: 'Diseases',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="leaf-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="AdminContent"
+        component={AdminContentScreen}
+        options={{
+          title: 'Content',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="images-outline" size={size} color={color} />
           ),
         }}
       />

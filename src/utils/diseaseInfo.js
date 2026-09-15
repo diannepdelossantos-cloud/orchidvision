@@ -1,6 +1,5 @@
-// Everything about *what a disease is* (name, category, severity, care
-// steps) now comes from the admin-editable Firestore knowledge base — see
-// useDiseaseInfo() — not from a hardcoded file. This file only keeps the
+// Treatment/severity/care content isn't hardcoded here — that's left for
+// the disease knowledge base work to connect up. This file only keeps the
 // one thing that genuinely isn't disease content: the species this app
 // targets, plus a shared check for the classifier's one special label.
 

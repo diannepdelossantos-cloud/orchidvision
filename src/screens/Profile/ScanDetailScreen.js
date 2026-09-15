@@ -7,7 +7,6 @@ import ImageZoomModal from '../../components/ImageZoomModal';
 import ScanResultCard from '../../components/ScanResultCard';
 import { useScanHistory } from '../../context/ScanHistoryContext';
 import { useTheme } from '../../context/ThemeContext';
-import { useDiseaseInfo } from '../../hooks/useDiseaseInfo';
 import { CONFIDENCE_THRESHOLD } from '../../services/predictionService';
 import { formatScanDate } from '../../utils/formatDate';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
@@ -28,7 +27,6 @@ export default function ScanDetailScreen({ route, navigation }) {
   const { scanId } = route.params;
   const { colors } = useTheme();
   const { records, deletedRecords } = useScanHistory();
-  const diseaseByLabel = useDiseaseInfo();
   const [zoomVisible, setZoomVisible] = useState(false);
 
   const scan = records.find((r) => r.id === scanId) || deletedRecords.find((r) => r.id === scanId);
@@ -79,7 +77,7 @@ export default function ScanDetailScreen({ route, navigation }) {
           )}
         </View>
 
-        <ScanResultCard result={toResult(scan)} diseaseEntry={diseaseByLabel[scan.label]} />
+        <ScanResultCard result={toResult(scan)} />
       </ScrollView>
 
       <ImageZoomModal
