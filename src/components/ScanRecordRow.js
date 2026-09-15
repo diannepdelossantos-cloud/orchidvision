@@ -60,10 +60,12 @@ export default function ScanRecordRow({
           </Text>
 
           <View style={styles.metaRow}>
-            <Ionicons name="time-outline" size={12} color={colors.textSecondary} />
-            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-              {formatScanDate(record.createdAt)}
-            </Text>
+            <View style={styles.metaDateWrap}>
+              <Ionicons name="time-outline" size={12} color={colors.textSecondary} />
+              <Text style={[styles.metaText, { color: colors.textSecondary }]} numberOfLines={1}>
+                {formatScanDate(record.createdAt)}
+              </Text>
+            </View>
             <View style={[styles.sourcePill, { borderColor: colors.border }]}>
               <Text style={[styles.sourcePillText, { color: colors.textSecondary }]}>{record.source}</Text>
             </View>
@@ -157,12 +159,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 6,
   },
+  // The date can be long ("September 15, 2026 • 2:24 PM") — it shrinks and
+  // truncates before the source pill ever does, so "Scanned"/"Uploaded"
+  // never gets clipped by the card's overflow:hidden edge.
+  metaDateWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+    marginRight: SPACING.xs,
+  },
   metaText: {
     ...TYPOGRAPHY.caption,
     fontSize: 11,
     marginLeft: 4,
+    flexShrink: 1,
   },
   sourcePill: {
+    flexShrink: 0,
     marginLeft: SPACING.sm,
     borderWidth: 1,
     borderRadius: RADIUS.pill,

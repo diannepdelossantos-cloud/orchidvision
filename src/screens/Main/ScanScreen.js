@@ -526,12 +526,17 @@ const styles = StyleSheet.create({
     marginLeft: 16,
     marginBottom: 12,
   },
-  imageWrap: { marginHorizontal: 16, marginBottom: 16 },
+  // marginBottom clears both the pills' full height below the image (see
+  // capturePill/savePill) and DetectionOverlay's "Affected regions
+  // highlighted" caption bar, which sits at the image's own bottom edge —
+  // the pills used to overlap and cover that caption before this offset
+  // was pushed down.
+  imageWrap: { marginHorizontal: 16, marginBottom: 56 },
   resultImage: { width: '100%', height: 220, borderRadius: 14, resizeMode: 'cover' },
   capturePill: {
     position: 'absolute',
     left: -4,
-    bottom: -16,
+    bottom: -44,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#2e7d32',
@@ -543,7 +548,7 @@ const styles = StyleSheet.create({
   savePill: {
     position: 'absolute',
     right: -4,
-    bottom: -16,
+    bottom: -44,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#4CAF50',

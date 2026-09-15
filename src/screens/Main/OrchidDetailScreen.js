@@ -17,7 +17,13 @@ function StatBox({ label, value, valueColor, colors }) {
   return (
     <View style={[styles.statBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
       <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{label}</Text>
-      <Text style={[styles.statValue, { color: valueColor || colors.textPrimary }]}>{value}</Text>
+      <Text
+        style={[styles.statValue, { color: valueColor || colors.textPrimary }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
+        {value}
+      </Text>
     </View>
   );
 }
