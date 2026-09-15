@@ -3,11 +3,15 @@ import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacit
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Badge from '../../components/Badge';
+import DetectionOverlay from '../../components/DetectionOverlay';
+import ImageZoomModal from '../../components/ImageZoomModal';
 import PrimaryButton from '../../components/PrimaryButton';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import * as orchidService from '../../services/firebase/orchidService';
-import { DISEASE_INFO, SEVERITY_LEVELS } from '../../utils/diseaseInfo';
+import { humanizeLabel, isHealthyLabel } from '../../utils/diseaseInfo';
+import { useDiseaseInfo } from '../../hooks/useDiseaseInfo';
+import { SEVERITY_COLORS, SEVERITY_ORDER } from '../../utils/severity';
 import { formatScanDate } from '../../utils/formatDate';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
 
@@ -21,8 +25,7 @@ function StatBox({ label, value, valueColor, colors }) {
 }
 
 function ScanHistoryRow({ scan, colors }) {
-  const info = DISEASE_INFO[scan.label];
-  const isHealthy = !!info?.isHealthy;
+  const isHealthy = isHealthyLabel(scan.label);
   const statusColor = isHealthy ? colors.success : colors.error;
 
   return (
@@ -48,11 +51,13 @@ export default function OrchidDetailScreen({ route, navigation }) {
   const { orchidId } = route.params;
   const { colors } = useTheme();
   const { user } = useAuth();
+  const diseaseByLabel = useDiseaseInfo();
 
   const [orchid, setOrchid] = useState(null);
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const [zoomVisible, setZoomVisible] = useState(false);
 
   useEffect(() => {
     const unsubscribe = orchidService.subscribeToOrchid(
@@ -95,9 +100,9 @@ export default function OrchidDetailScreen({ route, navigation }) {
     );
   }
 
-  const info = DISEASE_INFO[orchid.lastLabel];
-  const isHealthy = !!info?.isHealthy;
-  const severity = SEVERITY_LEVELS[info?.severity];
+  const isHealthy = isHealthyLabel(orchid.lastLabel);
+  const diseaseEntry = diseaseByLabel[orchid.lastLabel];
+  const severityIndex = diseaseEntry ? SEVERITY_ORDER.indexOf(diseaseEntry.severity) : -1;
   const confidencePct = `${((orchid.lastConfidence || 0) * 100).toFixed(0)}%`;
 
   return (
@@ -131,36 +136,37 @@ export default function OrchidDetailScreen({ route, navigation }) {
           <StatBox label="Confidence" value={confidencePct} colors={colors} />
           <StatBox
             label="Severity"
-            value={severity?.label || '—'}
-            valueColor={severity?.color}
+            value={diseaseEntry?.severity || '—'}
+            valueColor={severityIndex >= 0 ? SEVERITY_COLORS[diseaseEntry.severity] : undefined}
             colors={colors}
           />
         </View>
 
         <View style={styles.imageWrap}>
           {orchid.imageUrl ? (
-            <Image source={{ uri: orchid.imageUrl }} style={styles.image} />
+            <TouchableOpacity activeOpacity={0.9} onPress={() => setZoomVisible(true)}>
+              <Image source={{ uri: orchid.imageUrl }} style={styles.image} />
+              <DetectionOverlay imageUri={orchid.imageUrl} detections={orchid.lastDetections || []} />
+            </TouchableOpacity>
           ) : (
             <View style={[styles.image, styles.imagePlaceholder, { backgroundColor: colors.surface }]}>
               <Ionicons name="flower-outline" size={40} color={colors.textSecondary} />
             </View>
           )}
-          {!!info && (
+          {!!orchid.lastLabel && (
             <View style={[styles.imageBadge, { backgroundColor: isHealthy ? colors.success : colors.error }]}>
               <Text style={styles.imageBadgeText}>
-                {info.displayName} {confidencePct}
+                {isHealthy ? 'Healthy' : diseaseEntry?.name ?? humanizeLabel(orchid.lastLabel)} {confidencePct}
               </Text>
             </View>
           )}
         </View>
 
-        {info?.tags?.length > 0 && (
+        {!!diseaseEntry?.category && (
           <View style={styles.chipRow}>
-            {info.tags.map((tag) => (
-              <View key={tag} style={[styles.chip, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                <Text style={[styles.chipText, { color: colors.textSecondary }]}>{tag}</Text>
-              </View>
-            ))}
+            <View style={[styles.chip, { backgroundColor: colors.background, borderColor: colors.border }]}>
+              <Text style={[styles.chipText, { color: colors.textSecondary }]}>{diseaseEntry.category}</Text>
+            </View>
           </View>
         )}
 
@@ -181,6 +187,13 @@ export default function OrchidDetailScreen({ route, navigation }) {
           style={styles.scanButton}
         />
       </ScrollView>
+
+      <ImageZoomModal
+        visible={zoomVisible}
+        imageUri={orchid.imageUrl}
+        detections={orchid.lastDetections || []}
+        onClose={() => setZoomVisible(false)}
+      />
     </SafeAreaView>
   );
 }

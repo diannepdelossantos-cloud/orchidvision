@@ -16,12 +16,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { predictDisease } from '../../services/predictionService';
+import { detectDiseaseRegions } from '../../services/detectionService';
 import ScanResultCard from '../../components/ScanResultCard';
+import DetectionOverlay from '../../components/DetectionOverlay';
+import ImageZoomModal from '../../components/ImageZoomModal';
 import SaveOrchidModal from '../../components/SaveOrchidModal';
 import { useScanHistory } from '../../context/ScanHistoryContext';
 import { useAuth } from '../../context/AuthContext';
 import * as orchidService from '../../services/firebase/orchidService';
 import { TARGET_SPECIES } from '../../utils/diseaseInfo';
+import { useDiseaseInfo } from '../../hooks/useDiseaseInfo';
 import { showAlert } from '../../utils/showAlert';
 
 // Must match the <Tab.Screen name="..."> in MainTabNavigator.js exactly.
@@ -32,6 +36,7 @@ export default function ScanScreen() {
   const route = useRoute();
   const { user } = useAuth();
   const { addScanRecord } = useScanHistory();
+  const diseaseByLabel = useDiseaseInfo();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedImage, setCapturedImage] = useState(null);
@@ -39,11 +44,13 @@ export default function ScanScreen() {
   const [facing, setFacing] = useState('back');
 
   const [result, setResult] = useState(null);
+  const [detections, setDetections] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notOrchidWarning, setNotOrchidWarning] = useState(null);
 
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [savingOrchid, setSavingOrchid] = useState(false);
+  const [zoomVisible, setZoomVisible] = useState(false);
 
   // Set when arriving here via an orchid's "Scan this orchid now" button, so
   // Save attaches to that existing orchid instead of registering a new one.
@@ -72,9 +79,11 @@ export default function ScanScreen() {
 
   const resetAll = () => {
     setResult(null);
+    setDetections([]);
     setLoading(false);
     setNotOrchidWarning(null);
     setSaveModalVisible(false);
+    setZoomVisible(false);
     scanRecordPromiseRef.current = null;
   };
 
@@ -106,11 +115,22 @@ export default function ScanScreen() {
   const runScan = async (uri, source) => {
     setLoading(true);
     try {
-      const prediction = await predictDisease(uri);
+      // Detection runs alongside classification rather than after it — it's
+      // additive (bounding boxes for the diagnosis, not the diagnosis
+      // itself), so a failure here shouldn't block or delay the result the
+      // classifier already produced.
+      const [prediction, regions] = await Promise.all([
+        predictDisease(uri),
+        detectDiseaseRegions(uri).catch((e) => {
+          console.error('[ScanScreen] detectDiseaseRegions failed', { code: e?.code, message: e?.message });
+          return [];
+        }),
+      ]);
       if (prediction.top.label === 'not_orchid') {
         setNotOrchidWarning(prediction);
       } else {
         setResult(prediction);
+        setDetections(regions);
         // Saving to history is best-effort — a failure here shouldn't hide
         // the result the user just waited for. The Save-to-My-Orchids flow
         // awaits this same promise so it can reuse the uploaded photo
@@ -120,6 +140,7 @@ export default function ScanScreen() {
           confidence: prediction.top.score,
           imageUri: uri,
           source,
+          detections: regions,
         });
         scanRecordPromiseRef.current = recordPromise;
         recordPromise.catch(() => {});
@@ -168,6 +189,7 @@ export default function ScanScreen() {
         imageUrl: record?.imageUrl,
         label: result.top.label,
         confidence: result.top.score,
+        detections,
       });
       setSaveModalVisible(false);
       showAlert('Saved', `${nickname} was added to My Orchids.`);
@@ -193,6 +215,7 @@ export default function ScanScreen() {
         imageUrl: record?.imageUrl,
         label: result.top.label,
         confidence: result.top.score,
+        detections,
       });
       showAlert('Saved', `Scan added to ${targetOrchid.nickname}.`);
       setTargetOrchid(null);
@@ -246,7 +269,10 @@ export default function ScanScreen() {
           </TouchableOpacity>
 
           <View style={styles.imageWrap}>
-            <Image source={{ uri: capturedImage }} style={styles.resultImage} />
+            <TouchableOpacity activeOpacity={0.9} onPress={() => setZoomVisible(true)}>
+              <Image source={{ uri: capturedImage }} style={styles.resultImage} />
+              <DetectionOverlay imageUri={capturedImage} detections={detections} />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.capturePill} onPress={backToCamera}>
               <Ionicons name="camera" size={16} color="#fff" />
               <Text style={styles.capturePillText}>Capture new image</Text>
@@ -261,7 +287,7 @@ export default function ScanScreen() {
             </TouchableOpacity>
           </View>
 
-          <ScanResultCard result={result} />
+          <ScanResultCard result={result} diseaseEntry={diseaseByLabel[result.top.label]} />
         </ScrollView>
 
         <SaveOrchidModal
@@ -270,6 +296,13 @@ export default function ScanScreen() {
           saving={savingOrchid}
           onClose={() => setSaveModalVisible(false)}
           onSubmit={handleSaveOrchid}
+        />
+
+        <ImageZoomModal
+          visible={zoomVisible}
+          imageUri={capturedImage}
+          detections={detections}
+          onClose={() => setZoomVisible(false)}
         />
       </View>
     );

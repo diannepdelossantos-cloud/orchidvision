@@ -5,9 +5,10 @@ import FormModal from '../../../components/FormModal';
 import AuthTextField from '../../../components/AuthTextField';
 import PrimaryButton from '../../../components/PrimaryButton';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../../utils/theme';
+import { SEVERITY_ORDER } from '../../../utils/severity';
 
 const CATEGORIES = ['Fungal', 'Bacterial', 'Viral'];
-const SEVERITIES = ['Mild', 'Moderate', 'Severe'];
+const SEVERITIES = SEVERITY_ORDER;
 
 const emptyForm = {
   name: '',

@@ -2,22 +2,23 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import {
-  DISEASE_INFO,
-  SEVERITY_LEVELS,
-  TARGET_SPECIES,
-} from '../utils/diseaseInfo';
+import { humanizeLabel, isHealthyLabel, TARGET_SPECIES } from '../utils/diseaseInfo';
+import { SEVERITY_COLORS, SEVERITY_ORDER } from '../utils/severity';
 
-const SEVERITY_SEGMENTS = 4;
-
-export default function ScanResultCard({ result, overridden = false }) {
+// `diseaseEntry` is the matching document from the admin-managed Firestore
+// disease knowledge base (see useDiseaseInfo), keyed by the classifier's raw
+// label — undefined if nobody has added an entry for this label yet. Beyond
+// `result` itself, nothing here is model output: name/category/severity/
+// protocols are all admin-authored content, just no longer hardcoded into
+// the app bundle.
+export default function ScanResultCard({ result, overridden = false, diseaseEntry }) {
   if (!result) return null;
 
-  const info = DISEASE_INFO[result.top.label];
+  const label = result.top.label;
+  const isHealthy = isHealthyLabel(label);
   const confidence = (result.top.score * 100).toFixed(1);
-  const severity = SEVERITY_LEVELS[info?.severity];
-
-  const statusColor = info?.isHealthy ? '#2e7d32' : '#c62828';
+  const statusColor = isHealthy ? '#2e7d32' : '#c62828';
+  const severityIndex = diseaseEntry ? SEVERITY_ORDER.indexOf(diseaseEntry.severity) : -1;
 
   return (
     <View style={styles.wrap}>
@@ -36,42 +37,40 @@ export default function ScanResultCard({ result, overridden = false }) {
         <Text style={styles.cardHeading}>SCAN RESULT DETAIL</Text>
 
         <Text style={[styles.title, { color: statusColor }]}>
-          {info?.status} · {info?.displayName ?? result.top.label}
+          {isHealthy ? 'Healthy' : diseaseEntry?.name ?? humanizeLabel(label)}
         </Text>
 
         <Text style={styles.meta}>
           Confidence {confidence}% · {TARGET_SPECIES}
         </Text>
 
-        {info?.tags?.length > 0 && (
+        {!!diseaseEntry?.category && (
           <View style={styles.chipRow}>
-            {info.tags.map((t) => (
-              <View key={t} style={styles.chip}>
-                <Text style={styles.chipText}>{t}</Text>
-              </View>
-            ))}
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>{diseaseEntry.category}</Text>
+            </View>
           </View>
         )}
 
-        {info?.severity > 0 && (
+        {severityIndex >= 0 && (
           <View style={styles.severityRow}>
             <Text style={styles.severityLabel}>SEVERITY</Text>
             <View style={styles.severityBar}>
-              {Array.from({ length: SEVERITY_SEGMENTS }).map((_, i) => (
+              {SEVERITY_ORDER.map((level, i) => (
                 <View
-                  key={i}
+                  key={level}
                   style={[
                     styles.segment,
                     {
                       backgroundColor:
-                        i < info.severity ? severity.color : '#e0e0e0',
+                        i <= severityIndex ? SEVERITY_COLORS[diseaseEntry.severity] : '#e0e0e0',
                     },
                   ]}
                 />
               ))}
             </View>
-            <Text style={[styles.severityValue, { color: severity.color }]}>
-              {severity.label}
+            <Text style={[styles.severityValue, { color: SEVERITY_COLORS[diseaseEntry.severity] }]}>
+              {diseaseEntry.severity}
             </Text>
           </View>
         )}
@@ -84,40 +83,31 @@ export default function ScanResultCard({ result, overridden = false }) {
         )}
       </View>
 
-      {/* ---------------- Treatment ---------------- */}
-      {(info?.treatment || info?.prevention) && (
-        <View style={styles.card}>
-          <Text style={styles.cardHeading}>TREATMENT RECOMMENDATION</Text>
+      {/* ---------------- Care recommendation ---------------- */}
+      <View style={styles.card}>
+        <Text style={styles.cardHeading}>CARE RECOMMENDATION</Text>
 
-          {!!info.treatment && (
-            <View style={styles.section}>
-              <View style={styles.sectionHead}>
-                <Ionicons name="medkit-outline" size={16} color="#ef6c00" />
-                <Text style={[styles.sectionTitle, { color: '#ef6c00' }]}>
-                  TREATMENT
-                </Text>
-              </View>
-              <Text style={styles.sectionBody}>{info.treatment}</Text>
+        {isHealthy ? (
+          <Text style={styles.sectionBody}>No treatment needed. Keep monitoring regularly.</Text>
+        ) : diseaseEntry?.protocols?.length > 0 ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHead}>
+              <Ionicons name="medkit-outline" size={16} color="#ef6c00" />
+              <Text style={[styles.sectionTitle, { color: '#ef6c00' }]}>RECOMMENDED STEPS</Text>
             </View>
-          )}
-
-          {!!info.prevention && (
-            <View style={styles.section}>
-              <View style={styles.sectionHead}>
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={16}
-                  color="#2e7d32"
-                />
-                <Text style={[styles.sectionTitle, { color: '#2e7d32' }]}>
-                  PREVENTION
-                </Text>
-              </View>
-              <Text style={styles.sectionBody}>{info.prevention}</Text>
-            </View>
-          )}
-        </View>
-      )}
+            {diseaseEntry.protocols.map((step, i) => (
+              <Text key={i} style={styles.sectionBody}>
+                • {step}
+              </Text>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.sectionBody}>
+            No care guidance has been added yet for "{diseaseEntry?.name ?? humanizeLabel(label)}" in
+            the disease knowledge base.
+          </Text>
+        )}
+      </View>
 
       <Text style={styles.disclaimer}>
         Preliminary model trained on a limited dataset. Confirm with a grower
@@ -195,7 +185,7 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  section: { marginTop: 12 },
+  section: { marginTop: 0 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   sectionTitle: {
     fontSize: 11,

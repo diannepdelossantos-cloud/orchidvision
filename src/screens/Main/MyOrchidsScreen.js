@@ -6,7 +6,7 @@ import Badge from '../../components/Badge';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import * as orchidService from '../../services/firebase/orchidService';
-import { DISEASE_INFO } from '../../utils/diseaseInfo';
+import { isHealthyLabel } from '../../utils/diseaseInfo';
 import { formatShortDate } from '../../utils/formatDate';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
 
@@ -20,8 +20,7 @@ function StatBox({ value, label, colors }) {
 }
 
 function OrchidCard({ orchid, colors, onPress }) {
-  const info = DISEASE_INFO[orchid.lastLabel];
-  const isHealthy = !!info?.isHealthy;
+  const isHealthy = isHealthyLabel(orchid.lastLabel);
 
   return (
     <TouchableOpacity
@@ -87,7 +86,7 @@ export default function MyOrchidsScreen({ navigation }) {
   }, [user]);
 
   const stats = useMemo(() => {
-    const healthy = orchids.filter((o) => DISEASE_INFO[o.lastLabel]?.isHealthy).length;
+    const healthy = orchids.filter((o) => isHealthyLabel(o.lastLabel)).length;
     return {
       registered: orchids.length,
       healthy,

@@ -83,12 +83,13 @@ async function nextScanName(uid) {
 
 // Saves a completed scan result to history. `label` is the raw model label
 // (e.g. "healthy", "bacterial_brown_spot") so screens can look up display
-// text/status via DISEASE_INFO the same way ScanResultCard already does.
+// text/status via the admin-managed disease knowledge base (useDiseaseInfo)
+// the same way ScanResultCard already does.
 // `plantName` duplicates `name` under the field AdminContentScreen reads, so
 // admins see a real title instead of falling back to "Scan result".
 // Returns { id, imageUrl } so callers (e.g. the "Save to My Orchids" flow)
 // can reuse the already-uploaded photo instead of re-uploading it.
-export async function createScanRecord(uid, { label, confidence, imageUri, source }) {
+export async function createScanRecord(uid, { label, confidence, imageUri, source, detections = [] }) {
   const scanRef = doc(scansCollection());
   const [name, imageUrl] = await Promise.all([
     nextScanName(uid),
@@ -103,6 +104,10 @@ export async function createScanRecord(uid, { label, confidence, imageUri, sourc
     confidence,
     imageUrl,
     source,
+    // YOLOv8 bounding boxes: [{ box: {x,y,width,height} (0-1 normalized),
+    // label, confidence }]. Empty array means the detector ran and found
+    // nothing above threshold, same as a healthy scan.
+    detections,
     orchidId: null,
     createdAt: serverTimestamp(),
     deletedAt: null,
