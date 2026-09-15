@@ -207,11 +207,14 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.lg },
   statBox: {
     flex: 1,
+    minHeight: 76,
+    justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: RADIUS.lg,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.xs,
+    overflow: 'hidden',
   },
   statLabel: {
     ...TYPOGRAPHY.caption,
@@ -221,7 +224,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     textAlign: 'center',
   },
-  statValue: { ...TYPOGRAPHY.h2, fontSize: 18, marginTop: 4 },
+  statValue: { ...TYPOGRAPHY.h2, fontSize: 18, lineHeight: 22, marginTop: 4 },
 
   imageWrap: { marginBottom: SPACING.md },
   image: { width: '100%', height: 220, borderRadius: RADIUS.lg, resizeMode: 'cover' },
