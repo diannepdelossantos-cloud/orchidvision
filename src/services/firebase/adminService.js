@@ -10,14 +10,31 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from './firebaseConfig';
+import { supabase } from '../supabase/supabaseClient';
 
 // Real-time subscription to all user profile documents, for the Admin
 // Users screen. Ordered by fullName so the list is stable and scannable.
-export function subscribeToAllUsers(callback) {
+//
+// NOTE: a Firestore orderBy silently EXCLUDES documents missing that field,
+// so any user doc written without fullName will not appear here at all.
+// signUp and ensureUserDocument both always write it (possibly as ''), so
+// this only bites on hand-edited docs.
+//
+// Without an error callback, onSnapshot failures (denied rules, an index
+// still building) only surface as console noise while the UI sits at zero
+// looking plausible — same pattern orchidService already uses.
+export function subscribeToAllUsers(callback, onError) {
   const usersQuery = query(collection(db, 'users'), orderBy('fullName'));
-  return onSnapshot(usersQuery, (snapshot) => {
-    callback(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
-  });
+  return onSnapshot(
+    usersQuery,
+    (snapshot) => {
+      callback(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+    },
+    (error) => {
+      console.error('[adminService] subscribeToAllUsers failed', { code: error?.code, message: error?.message });
+      onError?.(error);
+    },
+  );
 }
 
 export async function updateUserRole(uid, role) {
@@ -32,18 +49,46 @@ export async function deleteUserProfile(uid) {
   await deleteDoc(doc(db, 'users', uid));
 }
 
-// Real-time subscription to all scan records, for the Admin Content
-// screen. Adjust the collection name/fields here if your ScanScreen.js
-// writes scans somewhere else or with a different shape.
-export function subscribeToAllScans(callback) {
+// Real-time subscription to all scan records, for the Admin Content screen
+// and the dashboard aggregates.
+//
+// This returns soft-deleted records too (scanRecordService stamps deletedAt
+// and keeps the document for RestoreScreen). Callers must filter them out —
+// use activeScans() from utils/adminStats.js rather than re-implementing it.
+export function subscribeToAllScans(callback, onError) {
   const scansQuery = query(collection(db, 'scans'), orderBy('createdAt', 'desc'));
-  return onSnapshot(scansQuery, (snapshot) => {
-    callback(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
-  });
+  return onSnapshot(
+    scansQuery,
+    (snapshot) => {
+      callback(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
+    },
+    (error) => {
+      console.error('[adminService] subscribeToAllScans failed', { code: error?.code, message: error?.message });
+      onError?.(error);
+    },
+  );
 }
 
-export async function deleteScan(scanId) {
+// Permanently removes a scan record AND its Supabase image, mirroring
+// scanRecordService.permanentlyDeleteScanRecord. `userId` comes from the
+// scan document itself and is required to build the storage path — without
+// it the photo is orphaned in the bucket with nothing left pointing at it.
+//
+// Best-effort on the storage side: the Firestore doc is the source of truth,
+// so a failed removal (already gone, transient network) shouldn't block it.
+export async function deleteScan(scanId, userId) {
   await deleteDoc(doc(db, 'scans', scanId));
+
+  if (!userId) {
+    console.warn('[adminService] deleteScan called without userId — image not removed', { scanId });
+    return;
+  }
+
+  try {
+    await supabase.storage.from('scans').remove([`${userId}/${scanId}.jpg`]);
+  } catch (error) {
+    console.warn('[adminService] scan image cleanup failed', { scanId, message: error?.message });
+  }
 }
 
 // Used by the User Management "+ Add" flow. NOTE: this only creates the
