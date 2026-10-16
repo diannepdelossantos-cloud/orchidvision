@@ -7,7 +7,9 @@ import jpeg from 'jpeg-js';
 import LABELS from '../assets/models/labels.json';
 
 const INPUT_SIZE = 224;
-export const CONFIDENCE_THRESHOLD = 0.6;
+// Below this, ScanResultCard shows a "retake" warning instead of trusting
+// the top label outright.
+export const CONFIDENCE_THRESHOLD = 0.7;
 export { LABELS };
 
 let modelPromise = null;
@@ -33,7 +35,7 @@ function getModel() {
   if (!modelPromise) {
     modelPromise = (async () => {
       const { loadTensorflowModel } = require('react-native-fast-tflite');
-      const asset = Asset.fromModule(require('../assets/models/orchid_health.tflite'));
+      const asset = Asset.fromModule(require('../assets/models/orchid_mobilenetv3.tflite'));
       await asset.downloadAsync();
       // The delegates array is a required argument (not optional) — an
       // empty array means "use the default CPU delegate".
