@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import ProfileScreen from '../screens/Profile/ProfileScreen';
+import ProfileNavigator from '../navigation/ProfileNavigator';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 import ScanScreen from '../screens/Main/ScanScreen';
 import MyOrchidsNavigator from '../navigation/MyOrchidsNavigator';
@@ -36,7 +36,7 @@ export default function MainTabNavigator() {
     >
       <Tab.Screen
         name="Profile"
-        component={ProfileScreen}
+        component={ProfileNavigator}
         options={{ tabBarIcon: ({ color, size }) => <Ionicons name="person-outline" size={size} color={color} /> }}
       />
       <Tab.Screen

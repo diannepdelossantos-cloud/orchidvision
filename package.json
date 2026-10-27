@@ -13,7 +13,7 @@
     "@supabase/supabase-js": "^2.111.0",
     "base64-arraybuffer": "^1.0.2",
     "buffer": "^6.0.3",
-    "expo": "~57.0.11",
+    "expo": "~57.0.23",
     "expo-auth-session": "~57.0.6",
     "expo-camera": "~57.0.3",
     "expo-dev-client": "~57.0.10",
@@ -47,7 +47,9 @@
   "expo": {
     "doctor": {
       "reactNativeDirectoryCheck": {
-        "exclude": ["react-native-fast-tflite"]
+        "exclude": [
+          "react-native-fast-tflite"
+        ]
       }
     }
   }

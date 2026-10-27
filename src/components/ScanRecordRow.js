@@ -1,15 +1,13 @@
 import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { DISEASE_INFO } from '../utils/diseaseInfo';
+import { isHealthyLabel } from '../utils/diseaseInfo';
 import { formatConfidence, formatDeletedDate, formatScanDate } from '../utils/formatDate';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../utils/theme';
 
-function statusColor(info, colors) {
-  if (!info) return colors.textSecondary;
-  if (info.isHealthy) return colors.success;
-  if (info.status === 'Diseased') return colors.error;
-  return colors.warning;
+function statusColor(label, colors) {
+  if (!label) return colors.textSecondary;
+  return isHealthyLabel(label) ? colors.success : colors.error;
 }
 
 // One scan-history row, reused by the History list ("history" variant, with
@@ -23,12 +21,21 @@ export default function ScanRecordRow({
   onDelete,
   onRestore,
   onPermanentDelete,
+  onPress,
 }) {
-  const info = DISEASE_INFO[record.label];
-  const badgeColor = statusColor(info, colors);
+  const badgeColor = statusColor(record.label, colors);
+  const badgeText = record.label ? (isHealthyLabel(record.label) ? 'Healthy' : 'Diseased') : 'Unknown';
+  // Editing mode's trash icon is the primary action then — tapping the rest
+  // of the row navigating away at the same time would be surprising.
+  const canNavigate = !!onPress && !(variant === 'history' && editing);
 
   return (
-    <View style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <TouchableOpacity
+      activeOpacity={canNavigate ? 0.7 : 1}
+      disabled={!canNavigate}
+      onPress={onPress}
+      style={[styles.row, { backgroundColor: colors.surface, borderColor: colors.border }]}
+    >
       <View style={styles.mainRow}>
         {record.imageUrl ? (
           <Image source={{ uri: record.imageUrl }} style={styles.thumb} />
@@ -44,7 +51,7 @@ export default function ScanRecordRow({
               {record.name}
             </Text>
             <View style={[styles.badge, { backgroundColor: `${badgeColor}1A` }]}>
-              <Text style={[styles.badgeText, { color: badgeColor }]}>{info?.status ?? 'Unknown'}</Text>
+              <Text style={[styles.badgeText, { color: badgeColor }]}>{badgeText}</Text>
             </View>
           </View>
 
@@ -53,10 +60,12 @@ export default function ScanRecordRow({
           </Text>
 
           <View style={styles.metaRow}>
-            <Ionicons name="time-outline" size={12} color={colors.textSecondary} />
-            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-              {formatScanDate(record.createdAt)}
-            </Text>
+            <View style={styles.metaDateWrap}>
+              <Ionicons name="time-outline" size={12} color={colors.textSecondary} />
+              <Text style={[styles.metaText, { color: colors.textSecondary }]} numberOfLines={1}>
+                {formatScanDate(record.createdAt)}
+              </Text>
+            </View>
             <View style={[styles.sourcePill, { borderColor: colors.border }]}>
               <Text style={[styles.sourcePillText, { color: colors.textSecondary }]}>{record.source}</Text>
             </View>
@@ -93,7 +102,7 @@ export default function ScanRecordRow({
           </TouchableOpacity>
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -150,12 +159,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 6,
   },
+  // The date can be long ("September 15, 2026 • 2:24 PM") — it shrinks and
+  // truncates before the source pill ever does, so "Scanned"/"Uploaded"
+  // never gets clipped by the card's overflow:hidden edge.
+  metaDateWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+    marginRight: SPACING.xs,
+  },
   metaText: {
     ...TYPOGRAPHY.caption,
     fontSize: 11,
     marginLeft: 4,
+    flexShrink: 1,
   },
   sourcePill: {
+    flexShrink: 0,
     marginLeft: SPACING.sm,
     borderWidth: 1,
     borderRadius: RADIUS.pill,

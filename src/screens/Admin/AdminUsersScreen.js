@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,15 +13,22 @@ import PrimaryButton from '../../components/PrimaryButton';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
 import { showAlert } from '../../utils/showAlert';
 import { isValidEmail } from '../../utils/validators';
+import {
+  buildUserScanSummary,
+  formatShortDate,
+  isRecentlyActive,
+  toDate,
+} from '../../utils/adminStats';
 
-// Users tab of the Admin Control Center. Live-subscribes to the `users`
-// collection (adminService). Fields like scan count / last-active date
-// aren't tracked in Firestore yet, so they fall back to placeholder text
-// below until that data is written by the scan/session flows.
+// Users tab of the Admin Control Center. Live-subscribes to both `users` and
+// `scans`: per-user scan totals and last-active dates are counted from the
+// scans collection rather than read off users/{uid}.scanCount, which is a
+// naming sequence for scan titles and never goes down (see adminStats.js).
 export default function AdminUsersScreen() {
   const { colors } = useTheme();
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
+  const [scans, setScans] = useState([]);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [isAddVisible, setIsAddVisible] = useState(false);
@@ -30,11 +37,18 @@ export default function AdminUsersScreen() {
   const [newRole, setNewRole] = useState('user');
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [loadError, setLoadError] = useState(null);
 
-  React.useEffect(() => {
-    const unsubscribe = adminService.subscribeToAllUsers(setUsers);
-    return unsubscribe;
+  useEffect(() => {
+    const unsubscribeUsers = adminService.subscribeToAllUsers(setUsers, setLoadError);
+    const unsubscribeScans = adminService.subscribeToAllScans(setScans, setLoadError);
+    return () => {
+      unsubscribeUsers();
+      unsubscribeScans();
+    };
   }, []);
+
+  const scanSummary = useMemo(() => buildUserScanSummary(scans), [scans]);
 
   const adminCount = users.filter((u) => u.role === 'admin').length;
   const userCount = users.length - adminCount;
@@ -110,9 +124,18 @@ export default function AdminUsersScreen() {
 
   const renderItem = ({ item }) => {
     const role = item.role === 'admin' ? 'admin' : 'user';
-    const status = item.status || 'Active'; // placeholder — no presence tracking yet
-    const scanLabel = item.scanCount != null ? `${item.scanCount} scans` : 'No scans yet';
-    const activeLabel = item.lastActiveLabel || 'Active date unavailable';
+    const summary = scanSummary.get(item.uid || item.id) || { count: 0, lastScanAt: null };
+    const joinedAt = toDate(item.createdAt);
+    const active = isRecentlyActive(summary.lastScanAt, joinedAt);
+
+    const scanLabel = summary.count === 1 ? '1 scan' : `${summary.count} scans`;
+    const lastScanLabel = formatShortDate(summary.lastScanAt);
+    const joinedLabel = formatShortDate(joinedAt);
+    const activityLabel = lastScanLabel
+      ? `Last scan ${lastScanLabel}`
+      : joinedLabel
+        ? `Joined ${joinedLabel}`
+        : 'No activity yet';
 
     return (
       <View style={[styles.userCard, { backgroundColor: colors.surface }]}>
@@ -129,14 +152,14 @@ export default function AdminUsersScreen() {
             <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{item.email}</Text>
           </View>
           <View style={styles.badgeStack}>
-            <Badge label={status} tone={status === 'Active' ? 'active' : 'inactive'} />
+            <Badge label={active ? 'Active' : 'Inactive'} tone={active ? 'active' : 'inactive'} />
             <Badge label={role === 'admin' ? 'Admin' : 'User'} tone={role} style={styles.badgeGap} />
           </View>
         </View>
 
         <View style={[styles.userBottomRow, { borderColor: colors.border }]}>
           <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-            {scanLabel} · {activeLabel}
+            {scanLabel} · {activityLabel}
           </Text>
           <View style={styles.actions}>
             <TouchableOpacity
@@ -161,6 +184,12 @@ export default function AdminUsersScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <AdminHeader title="User Management" subtitle="View and manage user accounts" />
+
+      {!!loadError && (
+        <Text style={[styles.loadError, { color: colors.danger }]}>
+          Couldn't load user data. Check your connection and admin permissions.
+        </Text>
+      )}
 
       <View style={styles.summaryRow}>
         <View style={[styles.summaryCard, styles.summaryCardDark, { backgroundColor: colors.primaryDark }]}>
@@ -289,6 +318,7 @@ export default function AdminUsersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  loadError: { ...TYPOGRAPHY.caption, paddingHorizontal: SPACING.xl, marginBottom: SPACING.sm },
   summaryRow: { flexDirection: 'row', gap: SPACING.md, paddingHorizontal: SPACING.xl, marginBottom: SPACING.md },
   summaryCard: { flex: 1, borderRadius: RADIUS.lg, padding: SPACING.md },
   summaryCardDark: {},
@@ -343,7 +373,7 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  metaText: { ...TYPOGRAPHY.caption },
+  metaText: { ...TYPOGRAPHY.caption, flexShrink: 1 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
   roleToggle: {
     flexDirection: 'row',

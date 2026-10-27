@@ -16,7 +16,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { predictDisease } from '../../services/predictionService';
+import { detectDiseaseRegions } from '../../services/detectionService';
 import ScanResultCard from '../../components/ScanResultCard';
+import DetectionOverlay from '../../components/DetectionOverlay';
+import ImageZoomModal from '../../components/ImageZoomModal';
 import SaveOrchidModal from '../../components/SaveOrchidModal';
 import { useScanHistory } from '../../context/ScanHistoryContext';
 import { useAuth } from '../../context/AuthContext';
@@ -39,11 +42,13 @@ export default function ScanScreen() {
   const [facing, setFacing] = useState('back');
 
   const [result, setResult] = useState(null);
+  const [detections, setDetections] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notOrchidWarning, setNotOrchidWarning] = useState(null);
 
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [savingOrchid, setSavingOrchid] = useState(false);
+  const [zoomVisible, setZoomVisible] = useState(false);
 
   // Set when arriving here via an orchid's "Scan this orchid now" button, so
   // Save attaches to that existing orchid instead of registering a new one.
@@ -72,9 +77,11 @@ export default function ScanScreen() {
 
   const resetAll = () => {
     setResult(null);
+    setDetections([]);
     setLoading(false);
     setNotOrchidWarning(null);
     setSaveModalVisible(false);
+    setZoomVisible(false);
     scanRecordPromiseRef.current = null;
   };
 
@@ -106,11 +113,22 @@ export default function ScanScreen() {
   const runScan = async (uri, source) => {
     setLoading(true);
     try {
-      const prediction = await predictDisease(uri);
+      // Detection runs alongside classification rather than after it — it's
+      // additive (bounding boxes for the diagnosis, not the diagnosis
+      // itself), so a failure here shouldn't block or delay the result the
+      // classifier already produced.
+      const [prediction, regions] = await Promise.all([
+        predictDisease(uri),
+        detectDiseaseRegions(uri).catch((e) => {
+          console.error('[ScanScreen] detectDiseaseRegions failed', { code: e?.code, message: e?.message });
+          return [];
+        }),
+      ]);
       if (prediction.top.label === 'not_orchid') {
         setNotOrchidWarning(prediction);
       } else {
         setResult(prediction);
+        setDetections(regions);
         // Saving to history is best-effort — a failure here shouldn't hide
         // the result the user just waited for. The Save-to-My-Orchids flow
         // awaits this same promise so it can reuse the uploaded photo
@@ -120,6 +138,7 @@ export default function ScanScreen() {
           confidence: prediction.top.score,
           imageUri: uri,
           source,
+          detections: regions,
         });
         scanRecordPromiseRef.current = recordPromise;
         recordPromise.catch(() => {});
@@ -168,6 +187,7 @@ export default function ScanScreen() {
         imageUrl: record?.imageUrl,
         label: result.top.label,
         confidence: result.top.score,
+        detections,
       });
       setSaveModalVisible(false);
       showAlert('Saved', `${nickname} was added to My Orchids.`);
@@ -193,6 +213,7 @@ export default function ScanScreen() {
         imageUrl: record?.imageUrl,
         label: result.top.label,
         confidence: result.top.score,
+        detections,
       });
       showAlert('Saved', `Scan added to ${targetOrchid.nickname}.`);
       setTargetOrchid(null);
@@ -246,7 +267,10 @@ export default function ScanScreen() {
           </TouchableOpacity>
 
           <View style={styles.imageWrap}>
-            <Image source={{ uri: capturedImage }} style={styles.resultImage} />
+            <TouchableOpacity activeOpacity={0.9} onPress={() => setZoomVisible(true)}>
+              <Image source={{ uri: capturedImage }} style={styles.resultImage} />
+              <DetectionOverlay imageUri={capturedImage} detections={detections} />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.capturePill} onPress={backToCamera}>
               <Ionicons name="camera" size={16} color="#fff" />
               <Text style={styles.capturePillText}>Capture new image</Text>
@@ -270,6 +294,13 @@ export default function ScanScreen() {
           saving={savingOrchid}
           onClose={() => setSaveModalVisible(false)}
           onSubmit={handleSaveOrchid}
+        />
+
+        <ImageZoomModal
+          visible={zoomVisible}
+          imageUri={capturedImage}
+          detections={detections}
+          onClose={() => setZoomVisible(false)}
         />
       </View>
     );
@@ -495,12 +526,17 @@ const styles = StyleSheet.create({
     marginLeft: 16,
     marginBottom: 12,
   },
-  imageWrap: { marginHorizontal: 16, marginBottom: 16 },
+  // marginBottom clears both the pills' full height below the image (see
+  // capturePill/savePill) and DetectionOverlay's "Affected regions
+  // highlighted" caption bar, which sits at the image's own bottom edge —
+  // the pills used to overlap and cover that caption before this offset
+  // was pushed down.
+  imageWrap: { marginHorizontal: 16, marginBottom: 56 },
   resultImage: { width: '100%', height: 220, borderRadius: 14, resizeMode: 'cover' },
   capturePill: {
     position: 'absolute',
     left: -4,
-    bottom: -16,
+    bottom: -44,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#2e7d32',
@@ -512,7 +548,7 @@ const styles = StyleSheet.create({
   savePill: {
     position: 'absolute',
     right: -4,
-    bottom: -16,
+    bottom: -44,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#4CAF50',

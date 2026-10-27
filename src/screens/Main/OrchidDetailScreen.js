@@ -3,11 +3,13 @@ import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacit
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Badge from '../../components/Badge';
+import DetectionOverlay from '../../components/DetectionOverlay';
+import ImageZoomModal from '../../components/ImageZoomModal';
 import PrimaryButton from '../../components/PrimaryButton';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import * as orchidService from '../../services/firebase/orchidService';
-import { DISEASE_INFO, SEVERITY_LEVELS } from '../../utils/diseaseInfo';
+import { humanizeLabel, isHealthyLabel } from '../../utils/diseaseInfo';
 import { formatScanDate } from '../../utils/formatDate';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
 
@@ -15,14 +17,19 @@ function StatBox({ label, value, valueColor, colors }) {
   return (
     <View style={[styles.statBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
       <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{label}</Text>
-      <Text style={[styles.statValue, { color: valueColor || colors.textPrimary }]}>{value}</Text>
+      <Text
+        style={[styles.statValue, { color: valueColor || colors.textPrimary }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
+        {value}
+      </Text>
     </View>
   );
 }
 
 function ScanHistoryRow({ scan, colors }) {
-  const info = DISEASE_INFO[scan.label];
-  const isHealthy = !!info?.isHealthy;
+  const isHealthy = isHealthyLabel(scan.label);
   const statusColor = isHealthy ? colors.success : colors.error;
 
   return (
@@ -53,6 +60,7 @@ export default function OrchidDetailScreen({ route, navigation }) {
   const [scans, setScans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const [zoomVisible, setZoomVisible] = useState(false);
 
   useEffect(() => {
     const unsubscribe = orchidService.subscribeToOrchid(
@@ -95,9 +103,7 @@ export default function OrchidDetailScreen({ route, navigation }) {
     );
   }
 
-  const info = DISEASE_INFO[orchid.lastLabel];
-  const isHealthy = !!info?.isHealthy;
-  const severity = SEVERITY_LEVELS[info?.severity];
+  const isHealthy = isHealthyLabel(orchid.lastLabel);
   const confidencePct = `${((orchid.lastConfidence || 0) * 100).toFixed(0)}%`;
 
   return (
@@ -129,40 +135,27 @@ export default function OrchidDetailScreen({ route, navigation }) {
             colors={colors}
           />
           <StatBox label="Confidence" value={confidencePct} colors={colors} />
-          <StatBox
-            label="Severity"
-            value={severity?.label || '—'}
-            valueColor={severity?.color}
-            colors={colors}
-          />
         </View>
 
         <View style={styles.imageWrap}>
           {orchid.imageUrl ? (
-            <Image source={{ uri: orchid.imageUrl }} style={styles.image} />
+            <TouchableOpacity activeOpacity={0.9} onPress={() => setZoomVisible(true)}>
+              <Image source={{ uri: orchid.imageUrl }} style={styles.image} />
+              <DetectionOverlay imageUri={orchid.imageUrl} detections={orchid.lastDetections || []} />
+            </TouchableOpacity>
           ) : (
             <View style={[styles.image, styles.imagePlaceholder, { backgroundColor: colors.surface }]}>
               <Ionicons name="flower-outline" size={40} color={colors.textSecondary} />
             </View>
           )}
-          {!!info && (
+          {!!orchid.lastLabel && (
             <View style={[styles.imageBadge, { backgroundColor: isHealthy ? colors.success : colors.error }]}>
               <Text style={styles.imageBadgeText}>
-                {info.displayName} {confidencePct}
+                {isHealthy ? 'Healthy' : humanizeLabel(orchid.lastLabel)} {confidencePct}
               </Text>
             </View>
           )}
         </View>
-
-        {info?.tags?.length > 0 && (
-          <View style={styles.chipRow}>
-            {info.tags.map((tag) => (
-              <View key={tag} style={[styles.chip, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                <Text style={[styles.chipText, { color: colors.textSecondary }]}>{tag}</Text>
-              </View>
-            ))}
-          </View>
-        )}
 
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Scan History</Text>
 
@@ -181,6 +174,13 @@ export default function OrchidDetailScreen({ route, navigation }) {
           style={styles.scanButton}
         />
       </ScrollView>
+
+      <ImageZoomModal
+        visible={zoomVisible}
+        imageUri={orchid.imageUrl}
+        detections={orchid.lastDetections || []}
+        onClose={() => setZoomVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -207,11 +207,14 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.lg },
   statBox: {
     flex: 1,
+    minHeight: 76,
+    justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: RADIUS.lg,
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.xs,
+    overflow: 'hidden',
   },
   statLabel: {
     ...TYPOGRAPHY.caption,
@@ -221,7 +224,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     textAlign: 'center',
   },
-  statValue: { ...TYPOGRAPHY.h2, fontSize: 18, marginTop: 4 },
+  statValue: { ...TYPOGRAPHY.h2, fontSize: 18, lineHeight: 22, marginTop: 4 },
 
   imageWrap: { marginBottom: SPACING.md },
   image: { width: '100%', height: 220, borderRadius: RADIUS.lg, resizeMode: 'cover' },
@@ -235,17 +238,6 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.sm,
   },
   imageBadgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: SPACING.lg },
-  chip: {
-    borderWidth: 1,
-    borderRadius: RADIUS.pill,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    marginRight: SPACING.xs,
-    marginBottom: SPACING.xs,
-  },
-  chipText: { ...TYPOGRAPHY.caption, fontSize: 12 },
 
   sectionLabel: {
     ...TYPOGRAPHY.caption,

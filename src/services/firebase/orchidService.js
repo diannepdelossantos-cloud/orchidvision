@@ -45,7 +45,7 @@ export function subscribeToOrchids(uid, callback, onError) {
 // so this reuses that upload instead of re-uploading the photo. Links the
 // scan back to the orchid via orchidId so future scans of the same plant
 // can be told apart from its first one.
-export async function createOrchid(uid, { nickname, speciesName, scanId, imageUrl, label, confidence }) {
+export async function createOrchid(uid, { nickname, speciesName, scanId, imageUrl, label, confidence, detections = [] }) {
   const orchidRef = doc(orchidsCollection());
 
   try {
@@ -56,6 +56,10 @@ export async function createOrchid(uid, { nickname, speciesName, scanId, imageUr
       imageUrl,
       lastLabel: label,
       lastConfidence: confidence,
+      // Mirrors scans/{scanId}.detections for whichever scan is currently
+      // this orchid's "last scan" photo, so the detail screen can draw
+      // bounding boxes without a second read against the scans collection.
+      lastDetections: detections,
       lastScanId: scanId,
       lastScanAt: serverTimestamp(),
       scanCount: 1,
@@ -122,11 +126,12 @@ export function subscribeToOrchidScans(uid, orchidId, callback, onError) {
 // orchid now" flow), instead of registering a new one. Updates the orchid's
 // denormalized "last scan" fields and bumps scanCount, then tags the scan
 // itself with orchidId the same way createOrchid does for a brand-new one.
-export async function attachScanToOrchid(uid, orchidId, { scanId, imageUrl, label, confidence }) {
+export async function attachScanToOrchid(uid, orchidId, { scanId, imageUrl, label, confidence, detections = [] }) {
   await updateDoc(doc(db, 'orchids', orchidId), {
     imageUrl,
     lastLabel: label,
     lastConfidence: confidence,
+    lastDetections: detections,
     lastScanId: scanId,
     lastScanAt: serverTimestamp(),
     scanCount: increment(1),
