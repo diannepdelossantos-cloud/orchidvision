@@ -14,13 +14,17 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../../services/firebase/firebaseConfig';
 
 import { predictDisease } from '../../services/predictionService';
 import { detectDiseaseRegions } from '../../services/detectionService';
 import ScanResultCard from '../../components/ScanResultCard';
 import DetectionOverlay from '../../components/DetectionOverlay';
 import ImageZoomModal from '../../components/ImageZoomModal';
-import SaveOrchidModal from '../../components/SaveOrchidModal';
+import RegisterOrchidModal from '../../components/RegisterOrchidModal';
+import ReportIssueModal from '../../components/ReportIssueModal';
+import { logError } from '../../utils/errorLogger';
 import { useScanHistory } from '../../context/ScanHistoryContext';
 import { useAuth } from '../../context/AuthContext';
 import * as orchidService from '../../services/firebase/orchidService';
@@ -48,7 +52,16 @@ export default function ScanScreen() {
 
   const [saveModalVisible, setSaveModalVisible] = useState(false);
   const [savingOrchid, setSavingOrchid] = useState(false);
+  // Set once this result has been saved, so tapping Save again can't create
+  // a second orchid / second History record for the same scan.
+  const [savedTo, setSavedTo] = useState(null);
+  // History record of the saved result. If it gets deleted elsewhere (orchid
+  // deleted in My Orchids, or removed in History), the result is cleared and
+  // the camera comes back.
+  const [savedScanId, setSavedScanId] = useState(null);
+  const [scanSource, setScanSource] = useState('Scanned');
   const [zoomVisible, setZoomVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
 
   // Set when arriving here via an orchid's "Scan this orchid now" button, so
   // Save attaches to that existing orchid instead of registering a new one.
@@ -57,10 +70,6 @@ export default function ScanScreen() {
   const [targetOrchid, setTargetOrchid] = useState(null);
 
   const cameraRef = useRef(null);
-  // Holds the in-flight/resolved { id, imageUrl } promise from
-  // addScanRecord for the current result, so Save can reuse the already-
-  // uploaded photo instead of re-uploading it.
-  const scanRecordPromiseRef = useRef(null);
 
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) {
@@ -75,6 +84,27 @@ export default function ScanScreen() {
     }
   }, [route.params?.orchidId]);
 
+  // Watch the saved record; once it's deleted or soft-deleted, go back to
+  // the camera instead of showing a result that no longer exists.
+  useEffect(() => {
+    if (!savedScanId) return undefined;
+    const unsubscribe = onSnapshot(
+      doc(db, 'scans', savedScanId),
+      (snap) => {
+        if (!snap.exists() || snap.data()?.deletedAt) {
+          resetAll();
+          setCapturedImage(null);
+        }
+      },
+      () => {
+        // Permission errors after a delete also mean the record is gone.
+        resetAll();
+        setCapturedImage(null);
+      },
+    );
+    return unsubscribe;
+  }, [savedScanId]);
+
   const resetAll = () => {
     setResult(null);
     setDetections([]);
@@ -82,7 +112,8 @@ export default function ScanScreen() {
     setNotOrchidWarning(null);
     setSaveModalVisible(false);
     setZoomVisible(false);
-    scanRecordPromiseRef.current = null;
+    setSavedTo(null);
+    setSavedScanId(null);
   };
 
   const takePhoto = async () => {
@@ -93,6 +124,7 @@ export default function ScanScreen() {
       setCapturedImage(photo.uri);
       runScan(photo.uri, 'Scanned');
     } catch (e) {
+      logError('scan.camera', e);
       Alert.alert('Camera error', 'The photo could not be captured. Try again.');
     }
   };
@@ -120,7 +152,7 @@ export default function ScanScreen() {
       const [prediction, regions] = await Promise.all([
         predictDisease(uri),
         detectDiseaseRegions(uri).catch((e) => {
-          console.error('[ScanScreen] detectDiseaseRegions failed', { code: e?.code, message: e?.message });
+          logError('scan.detect', e, { source });
           return [];
         }),
       ]);
@@ -129,22 +161,12 @@ export default function ScanScreen() {
       } else {
         setResult(prediction);
         setDetections(regions);
-        // Saving to history is best-effort — a failure here shouldn't hide
-        // the result the user just waited for. The Save-to-My-Orchids flow
-        // awaits this same promise so it can reuse the uploaded photo
-        // instead of uploading it a second time.
-        const recordPromise = addScanRecord({
-          label: prediction.top.label,
-          confidence: prediction.top.score,
-          imageUri: uri,
-          source,
-          detections: regions,
-        });
-        scanRecordPromiseRef.current = recordPromise;
-        recordPromise.catch(() => {});
+        setScanSource(source);
+        // No History record yet: it is created only when the user taps Save,
+        // named after the orchid, so one saved orchid = one History entry.
       }
     } catch (e) {
-      console.error('[ScanScreen] predictDisease failed', { code: e?.code, message: e?.message });
+      logError('scan.predict', e, { source });
       Alert.alert('Scan failed', e?.message || 'The image could not be analyzed. Try again.');
       setCapturedImage(null);
     } finally {
@@ -170,28 +192,61 @@ export default function ScanScreen() {
     setCapturedImage(null);
   };
 
+  // After a successful save: clear the result so the Scan tab is back on
+  // the camera next time, then open the orchid's detail screen. Works
+  // whether OrchidDetail is registered in a parent stack or nested inside
+  // the My Orchids tab's own stack.
+  const finishAndOpenOrchid = (orchidId) => {
+    resetAll();
+    setCapturedImage(null);
+
+    let nav = navigation;
+    while (nav) {
+      if (nav.getState?.()?.routeNames?.includes('OrchidDetail')) {
+        nav.navigate('OrchidDetail', { orchidId });
+        return;
+      }
+      nav = nav.getParent?.();
+    }
+    // `initial: false` keeps the My Orchids list underneath, so Back from
+    // the detail screen lands on the list.
+    navigation.navigate(MY_ORCHIDS_ROUTE, {
+      screen: 'OrchidDetail',
+      params: { orchidId },
+      initial: false,
+    });
+  };
+
+  // Uploads the photo and creates the single History record for this
+  // result, already named after the orchid it is being saved to.
+  const createRecordFor = (name) =>
+    addScanRecord({
+      name,
+      label: result.top.label,
+      confidence: result.top.score,
+      imageUri: capturedImage,
+      source: scanSource,
+      detections,
+    });
+
   const handleSaveOrchid = async ({ nickname, speciesName }) => {
+    if (savingOrchid || savedTo) return;
     setSavingOrchid(true);
     try {
-      let record;
-      try {
-        record = await scanRecordPromiseRef.current;
-      } catch (e) {
-        console.error('[ScanScreen] scan history record failed', { code: e?.code, message: e?.message });
-        throw e;
-      }
-      await orchidService.createOrchid(user.uid, {
+      const record = await createRecordFor(nickname);
+      const orchidId = await orchidService.createOrchid(user.uid, {
         nickname,
         speciesName,
-        scanId: record?.id,
-        imageUrl: record?.imageUrl,
+        scanId: record.id,
+        imageUrl: record.imageUrl,
         label: result.top.label,
         confidence: result.top.score,
         detections,
       });
       setSaveModalVisible(false);
-      showAlert('Saved', `${nickname} was added to My Orchids.`);
+      finishAndOpenOrchid(orchidId);
     } catch (e) {
+      logError('scan.save', e, { flow: 'register' });
       showAlert('Could not save', e?.message || 'Please try again.');
     } finally {
       setSavingOrchid(false);
@@ -199,25 +254,22 @@ export default function ScanScreen() {
   };
 
   const handleAttachToOrchid = async () => {
+    if (savingOrchid || savedTo) return;
     setSavingOrchid(true);
     try {
-      let record;
-      try {
-        record = await scanRecordPromiseRef.current;
-      } catch (e) {
-        console.error('[ScanScreen] scan history record failed', { code: e?.code, message: e?.message });
-        throw e;
-      }
+      const record = await createRecordFor(targetOrchid.nickname);
       await orchidService.attachScanToOrchid(user.uid, targetOrchid.id, {
-        scanId: record?.id,
-        imageUrl: record?.imageUrl,
+        scanId: record.id,
+        imageUrl: record.imageUrl,
         label: result.top.label,
         confidence: result.top.score,
         detections,
       });
-      showAlert('Saved', `Scan added to ${targetOrchid.nickname}.`);
+      const orchidId = targetOrchid.id;
       setTargetOrchid(null);
+      finishAndOpenOrchid(orchidId);
     } catch (e) {
+      logError('scan.save', e, { flow: 'attach' });
       showAlert('Could not save', e?.message || 'Please try again.');
     } finally {
       setSavingOrchid(false);
@@ -276,24 +328,41 @@ export default function ScanScreen() {
               <Text style={styles.capturePillText}>Capture new image</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.savePill}
+              style={[styles.savePill, (savingOrchid || savedTo) && styles.savePillDone]}
               onPress={targetOrchid ? handleAttachToOrchid : () => setSaveModalVisible(true)}
-              disabled={savingOrchid}
+              disabled={savingOrchid || !!savedTo}
             >
-              <Ionicons name="bookmark-outline" size={16} color="#fff" />
-              <Text style={styles.savePillText}>{targetOrchid ? `Save to ${targetOrchid.nickname}` : 'Save'}</Text>
+              {savingOrchid ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name={savedTo ? 'checkmark' : 'bookmark-outline'} size={16} color="#fff" />
+              )}
+              <Text style={styles.savePillText}>
+                {savedTo ? 'Saved' : targetOrchid ? `Save to ${targetOrchid.nickname}` : 'Save'}
+              </Text>
             </TouchableOpacity>
           </View>
 
           <ScanResultCard result={result} />
+
+          <TouchableOpacity style={styles.reportLink} onPress={() => setReportVisible(true)}>
+            <Ionicons name="flag-outline" size={14} color="#8a8a8a" />
+            <Text style={styles.reportLinkText}>Report this result</Text>
+          </TouchableOpacity>
         </ScrollView>
 
-        <SaveOrchidModal
+        <RegisterOrchidModal
           visible={saveModalVisible}
-          defaultSpeciesName={TARGET_SPECIES}
-          saving={savingOrchid}
+          defaultSpecies={TARGET_SPECIES}
           onClose={() => setSaveModalVisible(false)}
           onSubmit={handleSaveOrchid}
+        />
+
+        <ReportIssueModal
+          visible={reportVisible}
+          onClose={() => setReportVisible(false)}
+          defaultType="wrong_diagnosis"
+          scan={{ label: result.top.label, confidence: result.top.score }}
         />
 
         <ImageZoomModal
@@ -557,6 +626,16 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   savePillText: { color: '#fff', fontSize: 13, fontWeight: '600', marginLeft: 6 },
+  savePillDone: { backgroundColor: '#81c784' },
+  reportLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  reportLinkText: { color: '#8a8a8a', fontSize: 12, fontWeight: '600', textDecorationLine: 'underline' },
 
   // Modal
   modalBackdrop: {

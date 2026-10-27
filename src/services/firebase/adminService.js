@@ -41,6 +41,18 @@ export async function updateUserRole(uid, role) {
   await updateDoc(doc(db, 'users', uid), { role });
 }
 
+// Admin-set account status: 'active' | 'inactive' | 'deactivated'.
+// `accountStatus` is what the Users screen shows. `disabled` mirrors it for
+// the Firestore rules, which block a deactivated account (disabled: true)
+// from creating scans, orchids or reports.
+export async function setUserStatus(uid, status) {
+  await updateDoc(doc(db, 'users', uid), {
+    accountStatus: status,
+    disabled: status === 'deactivated',
+    statusUpdatedAt: serverTimestamp(),
+  });
+}
+
 // NOTE: this only removes the Firestore profile document, not the
 // underlying Firebase Auth account. Deleting the Auth account itself
 // requires the Admin SDK (a backend/Cloud Function) since client apps

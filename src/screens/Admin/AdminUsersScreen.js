@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import * as adminService from '../../services/firebase/adminService';
 import AdminHeader from '../../components/AdminHeader';
+import AdminReportsPanel from './AdminReportsPanel';
+import { subscribeToAllReports } from '../../services/firebase/reportService';
 import Badge from '../../components/Badge';
 import FormModal from '../../components/FormModal';
 import AuthTextField from '../../components/AuthTextField';
@@ -20,6 +22,14 @@ import {
   toDate,
 } from '../../utils/adminStats';
 
+// Account statuses an admin can set from the status badge.
+const STATUS_ORDER = ['active', 'inactive', 'deactivated'];
+const STATUS_META = {
+  active: { label: 'Active', tone: 'active', hint: 'Can use the app normally' },
+  inactive: { label: 'Inactive', tone: 'inactive', hint: 'Marked inactive; can still sign in and scan' },
+  deactivated: { label: 'Deactivated', tone: 'severe', hint: 'Blocked from scanning and saving orchids' },
+};
+
 // Users tab of the Admin Control Center. Live-subscribes to both `users` and
 // `scans`: per-user scan totals and last-active dates are counted from the
 // scans collection rather than read off users/{uid}.scanCount, which is a
@@ -27,6 +37,11 @@ import {
 export default function AdminUsersScreen() {
   const { colors } = useTheme();
   const { user: currentUser } = useAuth();
+  // User whose status picker is open (null = closed).
+  const [statusTarget, setStatusTarget] = useState(null);
+  // 'users' = the user list, 'reports' = user-reported issues / flagged content.
+  const [view, setView] = useState('users');
+  const [reports, setReports] = useState([]);
   const [users, setUsers] = useState([]);
   const [scans, setScans] = useState([]);
   const [search, setSearch] = useState('');
@@ -42,15 +57,18 @@ export default function AdminUsersScreen() {
   useEffect(() => {
     const unsubscribeUsers = adminService.subscribeToAllUsers(setUsers, setLoadError);
     const unsubscribeScans = adminService.subscribeToAllScans(setScans, setLoadError);
+    const unsubscribeReports = subscribeToAllReports(setReports, setLoadError);
     return () => {
       unsubscribeUsers();
       unsubscribeScans();
+      unsubscribeReports();
     };
   }, []);
 
   const scanSummary = useMemo(() => buildUserScanSummary(scans), [scans]);
 
   const adminCount = users.filter((u) => u.role === 'admin').length;
+  const openReportCount = reports.filter((r) => r.status === 'open').length;
   const userCount = users.length - adminCount;
 
   const filteredUsers = useMemo(() => {
@@ -75,6 +93,25 @@ export default function AdminUsersScreen() {
         { text: 'Confirm', onPress: () => adminService.updateUserRole(item.id, nextRole) },
       ],
     );
+  };
+
+  const openStatusPicker = (item, currentStatus) => {
+    if ((item.uid || item.id) === currentUser?.uid) {
+      showAlert('Not allowed', "You can't change your own account status.");
+      return;
+    }
+    setStatusTarget({ item, currentStatus });
+  };
+
+  const applyStatus = async (status) => {
+    const target = statusTarget;
+    setStatusTarget(null);
+    if (!target) return;
+    try {
+      await adminService.setUserStatus(target.item.id, status);
+    } catch (error) {
+      showAlert('Could not update', error?.message || 'Please try again.');
+    }
   };
 
   const handleDelete = (item) => {
@@ -126,7 +163,16 @@ export default function AdminUsersScreen() {
     const role = item.role === 'admin' ? 'admin' : 'user';
     const summary = scanSummary.get(item.uid || item.id) || { count: 0, lastScanAt: null };
     const joinedAt = toDate(item.createdAt);
-    const active = isRecentlyActive(summary.lastScanAt, joinedAt);
+    // Admin-set status wins; accounts never set by an admin fall back to the
+    // automatic 30-day activity check. Older docs that only have
+    // disabled: true still read as Deactivated.
+    const status = item.disabled
+      ? 'deactivated'
+      : STATUS_META[item.accountStatus]
+        ? item.accountStatus
+        : isRecentlyActive(summary.lastScanAt, joinedAt)
+          ? 'active'
+          : 'inactive';
 
     const scanLabel = summary.count === 1 ? '1 scan' : `${summary.count} scans`;
     const lastScanLabel = formatShortDate(summary.lastScanAt);
@@ -152,7 +198,16 @@ export default function AdminUsersScreen() {
             <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{item.email}</Text>
           </View>
           <View style={styles.badgeStack}>
-            <Badge label={active ? 'Active' : 'Inactive'} tone={active ? 'active' : 'inactive'} />
+            <TouchableOpacity
+              onPress={() => openStatusPicker(item, status)}
+              style={styles.statusTouch}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              accessibilityRole="button"
+              accessibilityLabel="Change account status"
+            >
+              <Badge label={STATUS_META[status].label} tone={STATUS_META[status].tone} />
+              <Ionicons name="chevron-down" size={12} color={colors.textSecondary} style={styles.statusIcon} />
+            </TouchableOpacity>
             <Badge label={role === 'admin' ? 'Admin' : 'User'} tone={role} style={styles.badgeGap} />
           </View>
         </View>
@@ -191,6 +246,36 @@ export default function AdminUsersScreen() {
         </Text>
       )}
 
+      <View style={[styles.segment, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        {[
+          { key: 'users', label: 'Users', icon: 'people-outline' },
+          { key: 'reports', label: 'Reports', icon: 'flag-outline' },
+        ].map((tab) => {
+          const active = view === tab.key;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.segmentTab, active && { backgroundColor: colors.primary }]}
+              onPress={() => setView(tab.key)}
+            >
+              <Ionicons name={tab.icon} size={15} color={active ? colors.textInverse : colors.textSecondary} />
+              <Text style={[styles.segmentText, { color: active ? colors.textInverse : colors.textSecondary }]}>
+                {tab.label}
+              </Text>
+              {tab.key === 'reports' && openReportCount > 0 && (
+                <View style={[styles.countPill, { backgroundColor: active ? colors.textInverse : colors.danger }]}>
+                  <Text style={[styles.countText, { color: active ? colors.primary : '#fff' }]}>{openReportCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {view === 'reports' ? (
+        <AdminReportsPanel reports={reports} users={users} />
+      ) : (
+      <>
       <View style={styles.summaryRow}>
         <View style={[styles.summaryCard, styles.summaryCardDark, { backgroundColor: colors.primaryDark }]}>
           <Ionicons name="shield-checkmark-outline" size={16} color={colors.textInverse} />
@@ -258,6 +343,44 @@ export default function AdminUsersScreen() {
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No users match your filters.</Text>
         }
       />
+      </>
+      )}
+
+      {/* ---------- Status picker: shows the two statuses it isn't ---------- */}
+      <Modal
+        visible={!!statusTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setStatusTarget(null)}
+      >
+        <Pressable style={styles.pickerBackdrop} onPress={() => setStatusTarget(null)}>
+          <Pressable style={[styles.pickerCard, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.pickerTitle, { color: colors.textPrimary }]}>Change status</Text>
+            <Text style={[styles.pickerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+              {statusTarget?.item.fullName || statusTarget?.item.email} · currently{' '}
+              {statusTarget ? STATUS_META[statusTarget.currentStatus].label : ''}
+            </Text>
+
+            {statusTarget &&
+              STATUS_ORDER.filter((key) => key !== statusTarget.currentStatus).map((key) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.pickerOption, { borderColor: colors.border }]}
+                  onPress={() => applyStatus(key)}
+                >
+                  <Badge label={STATUS_META[key].label} tone={STATUS_META[key].tone} />
+                  <Text style={[styles.pickerHint, { color: colors.textSecondary }]}>
+                    {STATUS_META[key].hint}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+
+            <TouchableOpacity style={styles.pickerCancel} onPress={() => setStatusTarget(null)}>
+              <Text style={[styles.pickerCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <FormModal
         visible={isAddVisible}
@@ -319,6 +442,26 @@ export default function AdminUsersScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   loadError: { ...TYPOGRAPHY.caption, paddingHorizontal: SPACING.xl, marginBottom: SPACING.sm },
+  segment: {
+    flexDirection: 'row',
+    marginHorizontal: SPACING.xl,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderRadius: RADIUS.pill,
+    padding: 3,
+  },
+  segmentTab: {
+    flex: 1,
+    height: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: RADIUS.pill,
+  },
+  segmentText: { ...TYPOGRAPHY.caption, fontWeight: '700', lineHeight: 16 },
+  countPill: { minWidth: 18, height: 18, paddingHorizontal: 5, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  countText: { fontSize: 11, lineHeight: 13, fontWeight: '800' },
   summaryRow: { flexDirection: 'row', gap: SPACING.md, paddingHorizontal: SPACING.xl, marginBottom: SPACING.md },
   summaryCard: { flex: 1, borderRadius: RADIUS.lg, padding: SPACING.md },
   summaryCardDark: {},
@@ -365,6 +508,29 @@ const styles = StyleSheet.create({
   userEmail: { ...TYPOGRAPHY.caption },
   badgeStack: { alignItems: 'flex-end', gap: 4 },
   badgeGap: { marginTop: 2 },
+  statusTouch: { flexDirection: 'row', alignItems: 'center' },
+  statusIcon: { marginLeft: 3 },
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.xl,
+  },
+  pickerCard: { borderRadius: RADIUS.lg, padding: SPACING.lg, width: '100%', maxWidth: 380, alignSelf: 'center' },
+  pickerTitle: { ...TYPOGRAPHY.body, fontWeight: '700', textAlign: 'center' },
+  pickerSubtitle: { ...TYPOGRAPHY.caption, marginTop: 2, marginBottom: SPACING.md, textAlign: 'center' },
+  pickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  pickerHint: { ...TYPOGRAPHY.caption, flex: 1 },
+  pickerCancel: { alignItems: 'center', paddingVertical: SPACING.sm, marginTop: SPACING.xs },
+  pickerCancelText: { ...TYPOGRAPHY.body, fontWeight: '700' },
   userBottomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

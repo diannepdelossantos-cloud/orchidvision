@@ -43,7 +43,8 @@
       "expo-web-browser",
       "@react-native-google-signin/google-signin",
       "react-native-fast-tflite",
-      "expo-font"
+      "expo-font",
+      "expo-sharing"
     ],
     "extra": {
       "eas": {

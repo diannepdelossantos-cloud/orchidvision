@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTheme } from '../context/ThemeContext';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import AdminDashboardScreen from '../screens/Admin/AdminDashboardScreen';
@@ -19,10 +20,16 @@ const Tab = createBottomTabNavigator();
 // (Home, Users, Diseases, Data, Monitor). Each screen builds its own
 // AdminHeader, so tab headers stay hidden here.
 export default function AdminNavigator() {
+  // Theme colors, so the active tab uses the same green as the user-side
+  // tab bar (and follows light/dark mode).
+  const { colors } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSecondary,
         // Five tabs is tight on narrow phones — shrink the label and let it
         // stay on one line rather than wrapping or truncating mid-word.
         tabBarLabelStyle: { fontSize: 10 },

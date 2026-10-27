@@ -9,9 +9,10 @@
 // Replaces the scan-volume trend, disease distribution, recent-activity and
 // monitoring placeholders that previously lived in adminMockData.js.
 // ---------------------------------------------------------------------------
-
+import { normalizeLabel } from '../services/firebase/diseasesService';
+import { HEALTHY_LABELS } from './modelLabels';
 import { CHART_COLORS } from './theme';
-import { humanizeLabel, isHealthyLabel } from './diseaseInfo';
+import { isHealthyLabel } from './diseaseInfo';
 
 const MONTH_LABELS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -68,14 +69,20 @@ export function formatConfidence(value) {
   return `${Math.round(value * 100)}%`;
 }
 
-// Maps a raw classifier label ("bacterial_brown_spot") to the curated name
-// from the knowledge base, falling back to mechanical title-casing when no
-// admin entry exists for that label yet.
+// Only diseases entered in the admin Disease Knowledge Base are named.
+// A label with no entry (e.g. "tip_burn") resolves to UNRECOGNIZED_NAME
+// instead of a title-cased model label, so admin screens never show a
+// disease the admin hasn't defined.
+export const UNRECOGNIZED_NAME = 'Unrecognized';
+
+// Maps a normalized classifier label ("bacterial_brown_spot") to the curated
+// name from the knowledge base. Keys are normalized so model labels like
+// "Black Rot" still match an entry saved as "black_rot".
 export function buildLabelNameMap(diseases = []) {
   const map = new Map();
   diseases.forEach((disease) => {
     if (disease.classificationLabel) {
-      map.set(disease.classificationLabel, disease.name);
+      map.set(normalizeLabel(disease.classificationLabel), disease.name);
     }
   });
   return map;
@@ -83,7 +90,10 @@ export function buildLabelNameMap(diseases = []) {
 
 export function resolveLabelName(label, nameMap = new Map()) {
   if (!label) return 'Unclassified';
-  return nameMap.get(label) || humanizeLabel(label);
+  const key = normalizeLabel(label);
+  if (nameMap.has(key)) return nameMap.get(key);
+  if (HEALTHY_LABELS.includes(key)) return 'Healthy';
+  return UNRECOGNIZED_NAME;
 }
 
 // uid -> display name, for screens that only hold a userId reference.
@@ -131,31 +141,82 @@ export function buildScanVolumeTrend(scans = [], monthCount = 8, now = new Date(
   return buckets;
 }
 
-// Share of scans per detected label, largest first. `value` is a rounded
-// percentage for the legend; `count` is the raw number. DonutChart normalizes
-// its own segments, so rounding drift in the legend never distorts the ring.
+const HEALTHY_SLICE_COLOR = '#66bb6a';
+const UNRECOGNIZED_SLICE_COLOR = '#bdbdbd';
+
+// Fixed slice colors for specific conditions, keyed by classification label.
+// Any condition not listed here gets the next CHART_COLORS color.
+const CONDITION_COLORS = {
+  sunburn: '#FFD600', // bright yellow
+};
+
+// Share of ALL users' active scans (soft-deleted excluded), grouped by
+// Disease Knowledge Base entry rather than raw model label:
+//   - label matches an admin entry -> that entry's name
+//   - healthy -> "Healthy" (green)
+//   - no entry (e.g. tip_burn) -> one gray "Unrecognized" slice, listed last
+// `value` is a whole percentage; the slices always add up to exactly 100.
+// `count` is the raw number. Each disease keeps a fixed color (assigned by
+// entry name) so slices don't swap colors as counts change.
 export function buildDiseaseDistribution(scans = [], diseases = []) {
   const nameMap = buildLabelNameMap(diseases);
+
+  const colorByName = new Map();
+  [...diseases]
+    .filter((d) => d.name)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((d, index) => {
+      const fixed = CONDITION_COLORS[normalizeLabel(d.classificationLabel)];
+      colorByName.set(d.name, fixed || CHART_COLORS[index % CHART_COLORS.length]);
+    });
+
   const counts = new Map();
   let total = 0;
 
   activeScans(scans).forEach((scan) => {
     if (!scan.label) return;
-    counts.set(scan.label, (counts.get(scan.label) || 0) + 1);
+    const name = resolveLabelName(scan.label, nameMap);
+    const bucket = counts.get(name) || { rawLabel: normalizeLabel(scan.label), count: 0 };
+    bucket.count += 1;
+    counts.set(name, bucket);
     total += 1;
   });
 
   if (total === 0) return [];
 
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([label, count], index) => ({
-      rawLabel: label,
-      label: resolveLabelName(label, nameMap),
+  const slices = [...counts.entries()].map(([name, { rawLabel, count }]) => {
+    const exact = (count / total) * 100;
+    let color = colorByName.get(name) || CHART_COLORS[0];
+    if (name === UNRECOGNIZED_NAME) color = UNRECOGNIZED_SLICE_COLOR;
+    else if (HEALTHY_LABELS.includes(rawLabel)) color = HEALTHY_SLICE_COLOR;
+    return {
+      rawLabel: name === UNRECOGNIZED_NAME ? '__unrecognized__' : rawLabel,
+      label: name,
       count,
-      value: Math.round((count / total) * 100),
-      color: CHART_COLORS[index % CHART_COLORS.length],
-    }));
+      color,
+      value: Math.floor(exact),
+      remainder: exact - Math.floor(exact),
+    };
+  });
+
+  // Hand out the rounding leftovers so the legend totals exactly 100%.
+  let leftover = 100 - slices.reduce((sum, s) => sum + s.value, 0);
+  [...slices]
+    .sort((a, b) => b.remainder - a.remainder)
+    .forEach((s) => {
+      if (leftover > 0) {
+        s.value += 1;
+        leftover -= 1;
+      }
+    });
+
+  return slices
+    .sort((a, b) => {
+      if (a.label === UNRECOGNIZED_NAME) return 1;
+      if (b.label === UNRECOGNIZED_NAME) return -1;
+      return b.count - a.count;
+    })
+    .map(({ remainder, ...slice }) => slice);
 }
 
 export function formatRelativeTime(date, now = new Date()) {
@@ -197,7 +258,9 @@ export function buildRecentActivity(scans = [], users = [], diseases = [], limit
         name: userNames.get(scan.userId) || 'Unknown user',
         action: healthy
           ? 'Healthy scan recorded'
-          : `${resolveLabelName(scan.label, nameMap)} detected`,
+          : resolveLabelName(scan.label, nameMap) === UNRECOGNIZED_NAME
+            ? 'Unrecognized condition detected'
+            : `${resolveLabelName(scan.label, nameMap)} detected`,
       };
     })
     .filter(Boolean);
@@ -300,10 +363,14 @@ export function buildMonitorSummary(
     (scan) => isValidConfidence(scan.confidence) && scan.confidence < LOW_CONFIDENCE_THRESHOLD,
   ).length;
 
+  // Counted by knowledge-base name, so unrecognized labels (no admin entry)
+  // never surface as the "most detected" disease.
   const diseaseCounts = new Map();
   inWindow.forEach((scan) => {
     if (!scan.label || isHealthyLabel(scan.label)) return;
-    diseaseCounts.set(scan.label, (diseaseCounts.get(scan.label) || 0) + 1);
+    const name = resolveLabelName(scan.label, nameMap);
+    if (name === UNRECOGNIZED_NAME) return;
+    diseaseCounts.set(name, (diseaseCounts.get(name) || 0) + 1);
   });
 
   const topDisease = [...diseaseCounts.entries()].sort((a, b) => b[1] - a[1])[0];
@@ -315,7 +382,7 @@ export function buildMonitorSummary(
     newUsers,
     avgConfidence,
     lowConfidenceCount,
-    mostDetected: topDisease ? resolveLabelName(topDisease[0], nameMap) : null,
+    mostDetected: topDisease ? topDisease[0] : null,
     mostDetectedCount: topDisease ? topDisease[1] : 0,
     // Records whose confidence isn't a usable 0-1 value. Surfaced rather than
     // hidden: a non-zero number here means something is writing bad data.
@@ -353,4 +420,161 @@ export function buildLowConfidenceScans(
       return b.date.getTime() - a.date.getTime();
     })
     .slice(0, limit);
+}
+// ---------------------------------------------------------------------------
+// Monitor: condition summary report
+// ---------------------------------------------------------------------------
+
+// Most commonly detected orchid conditions over the last `days` days
+// (null = all time), across all users' active scans. Grouped by Disease
+// Knowledge Base name; labels without an entry count as "Unrecognized".
+// Returns { total, rows: [{ name, count, share (0-1), isHealthy, isUnrecognized }] }
+// sorted by count, plus `topDisease` (most common non-healthy, recognized).
+export function buildConditionReport(scans = [], diseases = [], days = null, now = new Date()) {
+  const nameMap = buildLabelNameMap(diseases);
+  const cutoff = days ? now.getTime() - days * DAY_MS : null;
+
+  const counts = new Map();
+  let total = 0;
+
+  activeScans(scans).forEach((scan) => {
+    if (!scan.label) return;
+    if (cutoff) {
+      const date = toDate(scan.createdAt);
+      if (!date || date.getTime() < cutoff) return;
+    }
+    const name = resolveLabelName(scan.label, nameMap);
+    const row = counts.get(name) || {
+      name,
+      count: 0,
+      isHealthy: isHealthyLabel(scan.label),
+      isUnrecognized: name === UNRECOGNIZED_NAME,
+    };
+    row.count += 1;
+    counts.set(name, row);
+    total += 1;
+  });
+
+  const rows = [...counts.values()]
+    .map((row) => ({ ...row, share: total ? row.count / total : 0 }))
+    .sort((a, b) => b.count - a.count);
+
+  const topDisease = rows.find((r) => !r.isHealthy && !r.isUnrecognized) || null;
+  return { total, rows, topDisease };
+}
+
+// Plain-text CSV of a condition report, for exporting/sharing.
+export function conditionReportToCsv(report, periodLabel, now = new Date()) {
+  const lines = [
+    `OrchidVision condition report,${periodLabel}`,
+    `Generated,${now.toLocaleString()}`,
+    `Total scans,${report.total}`,
+    '',
+    'Condition,Scans,Share',
+    ...report.rows.map((r) => `"${String(r.name).replace(/"/g, '""')}",${r.count},${Math.round(r.share * 100)}%`),
+  ];
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Monitor: error logs and system health
+// ---------------------------------------------------------------------------
+
+// Health from errorLogs (utils/errorLogger.js), open reports and recent
+// classifier confidence. Status rule:
+//   critical  10+ errors in 24h, or any classifier failure in 24h
+//   degraded  any error in 24h, or 3+ open reports
+//   healthy   otherwise
+export function buildSystemHealth({ errorLogs = [], reports = [], scans = [] }, now = new Date()) {
+  const dayCutoff = now.getTime() - DAY_MS;
+  const weekCutoff = now.getTime() - 7 * DAY_MS;
+
+  const dated = errorLogs
+    .map((log) => ({ ...log, date: toDate(log.createdAt) }))
+    .filter((log) => log.date);
+
+  const last24h = dated.filter((l) => l.date.getTime() >= dayCutoff);
+  const last7d = dated.filter((l) => l.date.getTime() >= weekCutoff);
+
+  const bySource = new Map();
+  last7d.forEach((l) => bySource.set(l.source, (bySource.get(l.source) || 0) + 1));
+  const sources = [...bySource.entries()]
+    .map(([source, count]) => ({ source, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const classifierFailures24h = last24h.filter((l) => l.source === 'scan.predict').length;
+  const openReports = reports.filter((r) => r.status === 'open').length;
+
+  const weekScans = activeScans(scans).filter((s) => {
+    const d = toDate(s.createdAt);
+    return d && d.getTime() >= weekCutoff;
+  });
+  const confident = weekScans.filter(
+    (s) => isValidConfidence(s.confidence) && s.confidence >= LOW_CONFIDENCE_THRESHOLD,
+  ).length;
+
+  let status = 'healthy';
+  if (last24h.length >= 10 || classifierFailures24h > 0) status = 'critical';
+  else if (last24h.length > 0 || openReports >= 3) status = 'degraded';
+
+  return {
+    status,
+    errors24h: last24h.length,
+    errors7d: last7d.length,
+    classifierFailures24h,
+    openReports,
+    confidentShare7d: weekScans.length ? confident / weekScans.length : null,
+    lastErrorAt: dated[0]?.date || null,
+    sources,
+    recent: dated.slice(0, 8),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Monitor: dataset growth and retraining
+// ---------------------------------------------------------------------------
+
+// Points for the dataset growth chart (one per recorded dataset version).
+export function buildDatasetGrowth(versions = []) {
+  return versions.map((v) => ({ label: String(v.version || '—'), value: Number(v.totalImages) || 0 }));
+}
+
+// Retraining status: schedule plus how much new, real-world data users have
+// produced since the model was last trained (candidates for the next
+// dataset version, e.g. to upload to Roboflow for labeling).
+export function buildRetrainingStatus(modelOps, scans = [], diseases = [], now = new Date()) {
+  const lastTrainedAt = toDate(modelOps?.lastTrainedAt);
+  const nextRetrainAt = toDate(modelOps?.nextRetrainAt);
+  const nameMap = buildLabelNameMap(diseases);
+
+  const since = activeScans(scans).filter((s) => {
+    if (!lastTrainedAt) return true;
+    const d = toDate(s.createdAt);
+    return d && d.getTime() > lastTrainedAt.getTime();
+  });
+
+  const byCondition = new Map();
+  since.forEach((s) => {
+    if (!s.label) return;
+    const name = resolveLabelName(s.label, nameMap);
+    byCondition.set(name, (byCondition.get(name) || 0) + 1);
+  });
+
+  const lowConfidenceSince = since.filter(
+    (s) => isValidConfidence(s.confidence) && s.confidence < LOW_CONFIDENCE_THRESHOLD,
+  ).length;
+
+  const daysUntilNext = nextRetrainAt ? Math.ceil((nextRetrainAt.getTime() - now.getTime()) / DAY_MS) : null;
+
+  return {
+    lastTrainedAt,
+    nextRetrainAt,
+    daysUntilNext,
+    overdue: daysUntilNext != null && daysUntilNext < 0,
+    newScansSinceTraining: since.length,
+    lowConfidenceSince,
+    newByCondition: [...byCondition.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count),
+  };
 }

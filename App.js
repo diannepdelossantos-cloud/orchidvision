@@ -4,6 +4,7 @@ import { ThemeProvider } from './src/context/ThemeContext';
 import { AuthProvider } from './src/context/AuthContext';
 import { ProfileProvider } from './src/context/ProfileContext';
 import { ScanHistoryProvider } from './src/context/ScanHistoryContext';
+import { DiseasesProvider } from './src/context/DiseasesContext';
 import AppNavigator from './src/navigation/AppNavigator';
 
 export default function App() {
@@ -12,10 +13,12 @@ export default function App() {
       <ThemeProvider>
         <AuthProvider>
           <ProfileProvider>
-            <ScanHistoryProvider>
-              <AppNavigator />
-              <StatusBar style="light" />
-            </ScanHistoryProvider>
+            <DiseasesProvider>
+              <ScanHistoryProvider>
+                <AppNavigator />
+                <StatusBar style="light" />
+              </ScanHistoryProvider>
+            </DiseasesProvider>
           </ProfileProvider>
         </AuthProvider>
       </ThemeProvider>
