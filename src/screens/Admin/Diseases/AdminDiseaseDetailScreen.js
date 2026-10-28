@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../../context/ThemeContext';
@@ -8,9 +8,10 @@ import Badge from '../../../components/Badge';
 import AdminDiseaseFormModal from './AdminDiseaseFormModal';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../../utils/theme';
 import { showAlert } from '../../../utils/showAlert';
+import { exportDiseaseCsv, exportDiseasePdf } from '../../../utils/diseaseExport';
 
-const categoryTone = { Fungal: 'fungal', Bacterial: 'bacterial', Viral: 'viral' };
-const severityTone = { Mild: 'mild', Moderate: 'moderate', Severe: 'severe' };
+const categoryTone = { None: 'info', Fungal: 'fungal', Bacterial: 'bacterial', Viral: 'viral', Physiological: 'info' };
+const severityTone = { None: 'mild', Mild: 'mild', Moderate: 'moderate', Severe: 'severe' };
 
 // Detail view for a single Disease Knowledge Base entry. "Edit Entry"
 // reuses the same Add/Edit modal as the list screen; the record shown
@@ -20,6 +21,8 @@ export default function AdminDiseaseDetailScreen({ route, navigation }) {
   const { colors } = useTheme();
   const [disease, setDisease] = useState(route.params?.disease);
   const [isFormVisible, setIsFormVisible] = useState(false);
+  const [exportMenuVisible, setExportMenuVisible] = useState(false);
+  const [exporting, setExporting] = useState(null); // 'pdf' | 'csv' | null
 
   useEffect(() => {
     if (route.params?.disease) setDisease(route.params.disease);
@@ -33,8 +36,17 @@ export default function AdminDiseaseDetailScreen({ route, navigation }) {
     setIsFormVisible(false);
   };
 
-  const handleExport = () => {
-    showAlert('Export entry', 'Exporting disease entries as PDF/CSV is coming soon.');
+  const runExport = async (format) => {
+    setExportMenuVisible(false);
+    setExporting(format);
+    try {
+      if (format === 'pdf') await exportDiseasePdf(disease);
+      else await exportDiseaseCsv(disease);
+    } catch (error) {
+      showAlert('Export failed', error?.message || 'Could not export this entry.');
+    } finally {
+      setExporting(null);
+    }
   };
 
   const formatUpdated = () => {
@@ -73,10 +85,19 @@ export default function AdminDiseaseDetailScreen({ route, navigation }) {
 
           <View style={styles.divider} />
 
-          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Treatment protocols</Text>
-          <Text style={[styles.value, { color: colors.textPrimary }]}>
-            {(disease.protocols || []).length} entries
-          </Text>
+          <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Preventive protocols</Text>
+          {(disease.prevention || []).length > 0 ? (
+            (disease.prevention || []).map((tip, i) => (
+              <View key={i} style={styles.bulletRow}>
+                <Text style={[styles.bullet, { color: colors.primary }]}>•</Text>
+                <Text style={[styles.value, styles.bulletText, { color: colors.textPrimary }]}>{tip}</Text>
+              </View>
+            ))
+          ) : (
+            <Text style={[styles.value, { color: colors.textSecondary }]}>
+              No preventive protocols yet — tap Edit Entry to add them.
+            </Text>
+          )}
 
           <View style={styles.divider} />
 
@@ -84,10 +105,21 @@ export default function AdminDiseaseDetailScreen({ route, navigation }) {
           <Text style={[styles.value, { color: colors.textPrimary }]}>{formatUpdated()}</Text>
 
           <View style={[styles.sampleBox, { backgroundColor: colors.background }]}>
-            <Text style={[styles.sampleLabel, { color: colors.primary }]}>Sample treatment: </Text>
-            <Text style={[styles.sampleText, { color: colors.textSecondary }]}>
-              {disease.sampleTreatment || (disease.protocols || []).join(' ')}
-            </Text>
+            <Text style={[styles.sampleLabel, { color: colors.primary }]}>Treatment Recommendation</Text>
+            {(disease.protocols || []).length > 0 ? (
+              (disease.protocols || []).map((step, i) => (
+                <View key={i} style={styles.bulletRow}>
+                  {disease.protocols.length > 1 && (
+                    <Text style={[styles.sampleText, styles.stepNumber, { color: colors.primary }]}>{i + 1}.</Text>
+                  )}
+                  <Text style={[styles.sampleText, styles.bulletText, { color: colors.textSecondary }]}>{step}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={[styles.sampleText, { color: colors.textSecondary }]}>
+                {disease.sampleTreatment || 'No treatment needed.'}
+              </Text>
+            )}
           </View>
 
           <View style={styles.actionsRow}>
@@ -100,13 +132,51 @@ export default function AdminDiseaseDetailScreen({ route, navigation }) {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.downloadButton, { borderColor: colors.border }]}
-              onPress={handleExport}
+              onPress={() => setExportMenuVisible(true)}
+              disabled={!!exporting}
             >
-              <Ionicons name="download-outline" size={18} color={colors.textPrimary} />
+              {exporting ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Ionicons name="download-outline" size={18} color={colors.textPrimary} />
+              )}
             </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={exportMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExportMenuVisible(false)}
+      >
+        <Pressable style={styles.menuBackdrop} onPress={() => setExportMenuVisible(false)}>
+          <Pressable style={[styles.menuCard, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.menuTitle, { color: colors.textPrimary }]}>Export entry</Text>
+            <Text style={[styles.menuSubtitle, { color: colors.textSecondary }]}>{disease.name}</Text>
+            {[
+              { key: 'pdf', icon: 'document-text-outline', label: 'PDF', hint: 'Formatted sheet to print or share' },
+              { key: 'csv', icon: 'grid-outline', label: 'CSV', hint: 'Spreadsheet (Excel, Google Sheets)' },
+            ].map((opt) => (
+              <TouchableOpacity
+                key={opt.key}
+                style={[styles.menuOption, { borderColor: colors.border }]}
+                onPress={() => runExport(opt.key)}
+              >
+                <Ionicons name={opt.icon} size={20} color={colors.primary} />
+                <View style={styles.menuOptionText}>
+                  <Text style={[styles.menuOptionLabel, { color: colors.textPrimary }]}>{opt.label}</Text>
+                  <Text style={[styles.menuOptionHint, { color: colors.textSecondary }]}>{opt.hint}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.menuCancel} onPress={() => setExportMenuVisible(false)}>
+              <Text style={[styles.menuCancelText, { color: colors.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <AdminDiseaseFormModal
         visible={isFormVisible}
@@ -141,7 +211,34 @@ const styles = StyleSheet.create({
   value: { ...TYPOGRAPHY.body },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E0E0E0', marginVertical: SPACING.md },
   sampleBox: { borderRadius: RADIUS.md, padding: SPACING.md, marginTop: SPACING.lg },
-  sampleLabel: { ...TYPOGRAPHY.caption, fontWeight: '700' },
+  sampleLabel: { ...TYPOGRAPHY.caption, fontWeight: '700', marginBottom: SPACING.xs },
+  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 },
+  bullet: { ...TYPOGRAPHY.body, width: 14 },
+  stepNumber: { width: 18, fontWeight: '700' },
+  bulletText: { flex: 1 },
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.xl,
+  },
+  menuCard: { borderRadius: RADIUS.lg, padding: SPACING.lg, width: '100%', maxWidth: 380, alignSelf: 'center' },
+  menuTitle: { ...TYPOGRAPHY.body, fontWeight: '700', textAlign: 'center' },
+  menuSubtitle: { ...TYPOGRAPHY.caption, textAlign: 'center', marginTop: 2, marginBottom: SPACING.md },
+  menuOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  menuOptionText: { flex: 1 },
+  menuOptionLabel: { ...TYPOGRAPHY.body, fontWeight: '700' },
+  menuOptionHint: { ...TYPOGRAPHY.caption, marginTop: 2 },
+  menuCancel: { alignItems: 'center', paddingVertical: SPACING.sm, marginTop: SPACING.xs },
+  menuCancelText: { ...TYPOGRAPHY.body, fontWeight: '700' },
   sampleText: { ...TYPOGRAPHY.caption, lineHeight: 18 },
   actionsRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.lg },
   editButton: {

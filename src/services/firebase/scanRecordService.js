@@ -3,6 +3,9 @@ import {
   collection,
   doc,
   deleteDoc,
+  getDoc,
+  getDocs,
+  writeBatch,
   onSnapshot,
   orderBy,
   query,
@@ -82,16 +85,17 @@ async function nextScanName(uid) {
 }
 
 // Saves a completed scan result to history. `label` is the raw model label
-// (e.g. "healthy", "bacterial_brown_spot") so screens can look up display
-// text/status via DISEASE_INFO the same way ScanResultCard already does.
+// (e.g. "healthy", "bacterial_brown_spot") as returned by the classifier.
 // `plantName` duplicates `name` under the field AdminContentScreen reads, so
 // admins see a real title instead of falling back to "Scan result".
 // Returns { id, imageUrl } so callers (e.g. the "Save to My Orchids" flow)
 // can reuse the already-uploaded photo instead of re-uploading it.
-export async function createScanRecord(uid, { label, confidence, imageUri, source }) {
+// Pass `name` (the orchid's nickname) to store the record under that name;
+// without it, the auto-numbered "Waling-Waling #N" name is used.
+export async function createScanRecord(uid, { name: givenName, label, confidence, imageUri, source, detections = [] }) {
   const scanRef = doc(scansCollection());
   const [name, imageUrl] = await Promise.all([
-    nextScanName(uid),
+    givenName ? Promise.resolve(givenName) : nextScanName(uid),
     uploadScanImage(uid, scanRef.id, imageUri),
   ]);
 
@@ -103,6 +107,10 @@ export async function createScanRecord(uid, { label, confidence, imageUri, sourc
     confidence,
     imageUrl,
     source,
+    // YOLOv8 bounding boxes: [{ box: {x,y,width,height} (0-1 normalized),
+    // label, confidence }]. Empty array means the detector ran and found
+    // nothing above threshold, same as a healthy scan.
+    detections,
     orchidId: null,
     createdAt: serverTimestamp(),
     deletedAt: null,
@@ -119,18 +127,62 @@ export async function softDeleteScanRecords(uid, scanIds) {
   await Promise.all(scanIds.map((id) => softDeleteScanRecord(uid, id)));
 }
 
+// Restoring a scan that was removed together with its orchid (My Orchids
+// delete) also restores that orchid and the other scans deleted with it, so
+// the orchid reappears in My Orchids with its full history.
 export async function restoreScanRecord(uid, scanId) {
-  await updateDoc(doc(scansCollection(), scanId), { deletedAt: null });
+  const scanRef = doc(scansCollection(), scanId);
+  const scanSnap = await getDoc(scanRef);
+  const orchidId = scanSnap.data()?.orchidId;
+
+  await updateDoc(scanRef, { deletedAt: null, deletedWithOrchid: false });
+
+  if (!orchidId) return;
+  const orchidRef = doc(db, 'orchids', orchidId);
+  const orchidSnap = await getDoc(orchidRef);
+  if (!orchidSnap.exists() || !orchidSnap.data()?.deletedAt) return;
+
+  const siblings = await getDocs(
+    query(scansCollection(), where('userId', '==', uid), where('orchidId', '==', orchidId)),
+  );
+  const batch = writeBatch(db);
+  batch.update(orchidRef, { deletedAt: null });
+  siblings.forEach((d) => {
+    if (d.id !== scanId && d.data()?.deletedWithOrchid) {
+      batch.update(d.ref, { deletedAt: null, deletedWithOrchid: false });
+    }
+  });
+  await batch.commit();
 }
 
 // Best-effort image cleanup: the Firestore doc is the source of truth, so a
 // failed storage removal (e.g. already gone) shouldn't block the doc delete.
 export async function permanentlyDeleteScanRecord(uid, scanId) {
-  await deleteDoc(doc(scansCollection(), scanId));
+  const scanRef = doc(scansCollection(), scanId);
+  const orchidId = (await getDoc(scanRef).catch(() => null))?.data()?.orchidId;
+
+  await deleteDoc(scanRef);
   try {
     await supabase.storage.from('scans').remove([`${uid}/${scanId}.jpg`]);
   } catch (error) {
     // Non-fatal — the record itself is already gone.
+  }
+
+  // A deleted orchid is erased for good once its last scan is gone (it can
+  // no longer be restored from History at that point).
+  if (orchidId) {
+    try {
+      const orchidRef = doc(db, 'orchids', orchidId);
+      const orchidSnap = await getDoc(orchidRef);
+      if (orchidSnap.exists() && orchidSnap.data()?.deletedAt) {
+        const remaining = await getDocs(
+          query(scansCollection(), where('userId', '==', uid), where('orchidId', '==', orchidId)),
+        );
+        if (remaining.empty) await deleteDoc(orchidRef);
+      }
+    } catch (error) {
+      // Non-fatal — a leftover hidden orchid doc does no harm.
+    }
   }
 }
 

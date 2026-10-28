@@ -11,8 +11,8 @@ import AdminDiseaseFormModal from './AdminDiseaseFormModal';
 import { RADIUS, SPACING, TYPOGRAPHY } from '../../../utils/theme';
 import { showAlert } from '../../../utils/showAlert';
 
-const categoryTone = { Fungal: 'fungal', Bacterial: 'bacterial', Viral: 'viral' };
-const severityTone = { Mild: 'mild', Moderate: 'moderate', Severe: 'severe' };
+const categoryTone = { None: 'info', Fungal: 'fungal', Bacterial: 'bacterial', Viral: 'viral', Physiological: 'info' };
+const severityTone = { None: 'mild', Mild: 'mild', Moderate: 'moderate', Severe: 'severe' };
 
 export default function AdminDiseasesListScreen({ navigation }) {
   const { colors } = useTheme();

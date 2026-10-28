@@ -2,22 +2,41 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import {
-  DISEASE_INFO,
-  SEVERITY_LEVELS,
-  TARGET_SPECIES,
-} from '../utils/diseaseInfo';
+import { isHealthyLabel, TARGET_SPECIES } from '../utils/diseaseInfo';
+import { useDiseaseForLabel } from '../context/DiseasesContext';
+import TreatmentRecommendationCard from './TreatmentRecommendationCard';
 
-const SEVERITY_SEGMENTS = 4;
+// The diagnosis itself (label, confidence) is model output. The disease
+// name, symptoms, severity and treatment come from the admin-managed
+// Disease Knowledge Base, matched on the model's classification label.
+const SEVERITY_LEVELS = ['Mild', 'Moderate', 'Severe'];
+const SEVERITY_COLORS = { Mild: '#7cb342', Moderate: '#ef8c2f', Severe: '#c62828' };
 
 export default function ScanResultCard({ result, overridden = false }) {
+  const label = result?.top?.label;
+  const { entry, isLoading } = useDiseaseForLabel(label); // hooks must run before any early return
+
   if (!result) return null;
 
-  const info = DISEASE_INFO[result.top.label];
+  const isHealthy = isHealthyLabel(label);
   const confidence = (result.top.score * 100).toFixed(1);
-  const severity = SEVERITY_LEVELS[info?.severity];
+  // Only diseases entered in the admin Disease Knowledge Base are named.
+  // A model label with no entry (e.g. a class the admin hasn't added, or
+  // has removed) is shown as unrecognized instead of its raw model name.
+  const isUnrecognized = !isHealthy && !isLoading && !entry;
+  const statusColor = isHealthy ? '#2e7d32' : isUnrecognized ? '#8a5a00' : '#c62828';
+  const title = isHealthy
+    ? 'Healthy'
+    : isLoading
+      ? 'Checking result…'
+      : entry
+        ? `Diseased · ${entry.name}`
+        : 'Unrecognized condition';
+  const severityIndex = entry ? SEVERITY_LEVELS.indexOf(entry.severity) : -1;
 
-  const statusColor = info?.isHealthy ? '#2e7d32' : '#c62828';
+  // Don't recommend treatment or care for a non-orchid photo, or for a
+  // result that doesn't match any knowledge-base entry.
+  const showTreatment = !overridden && !isUnrecognized;
 
   return (
     <View style={styles.wrap}>
@@ -36,47 +55,51 @@ export default function ScanResultCard({ result, overridden = false }) {
         <Text style={styles.cardHeading}>SCAN RESULT DETAIL</Text>
 
         <Text style={[styles.title, { color: statusColor }]}>
-          {info?.status} · {info?.displayName ?? result.top.label}
+          {title}
         </Text>
 
         <Text style={styles.meta}>
           Confidence {confidence}% · {TARGET_SPECIES}
         </Text>
 
-        {info?.tags?.length > 0 && (
-          <View style={styles.chipRow}>
-            {info.tags.map((t) => (
-              <View key={t} style={styles.chip}>
-                <Text style={styles.chipText}>{t}</Text>
+        {entry?.symptoms?.length > 0 && (
+          <View style={styles.tagRow}>
+            {entry.symptoms.map((symptom) => (
+              <View key={symptom} style={[styles.tag, isHealthy && styles.tagHealthy]}>
+                <Text style={[styles.tagText, isHealthy && styles.tagTextHealthy]}>{symptom}</Text>
               </View>
             ))}
           </View>
         )}
 
-        {info?.severity > 0 && (
+        {!isHealthy && severityIndex >= 0 && (
           <View style={styles.severityRow}>
             <Text style={styles.severityLabel}>SEVERITY</Text>
-            <View style={styles.severityBar}>
-              {Array.from({ length: SEVERITY_SEGMENTS }).map((_, i) => (
+            <View style={styles.severityTrack}>
+              {SEVERITY_LEVELS.map((level, i) => (
                 <View
-                  key={i}
+                  key={level}
                   style={[
-                    styles.segment,
-                    {
-                      backgroundColor:
-                        i < info.severity ? severity.color : '#e0e0e0',
-                    },
+                    styles.severitySegment,
+                    { backgroundColor: i <= severityIndex ? SEVERITY_COLORS[entry.severity] : '#e6e6e6' },
                   ]}
                 />
               ))}
             </View>
-            <Text style={[styles.severityValue, { color: severity.color }]}>
-              {severity.label}
+            <Text style={[styles.severityValue, { color: SEVERITY_COLORS[entry.severity] }]}>
+              {entry.severity}
             </Text>
           </View>
         )}
 
-        {!result.isConfident && (
+        {isUnrecognized && (
+          <Text style={styles.lowConfidence}>
+            This result doesn't match any disease in the OrchidVision knowledge
+            base. Retake the photo, or consult a grower or agriculturist.
+          </Text>
+        )}
+
+        {!result.isConfident && !isUnrecognized && (
           <Text style={styles.lowConfidence}>
             Low confidence — retake with the affected area closer and in even
             daylight.
@@ -84,40 +107,8 @@ export default function ScanResultCard({ result, overridden = false }) {
         )}
       </View>
 
-      {/* ---------------- Treatment ---------------- */}
-      {(info?.treatment || info?.prevention) && (
-        <View style={styles.card}>
-          <Text style={styles.cardHeading}>TREATMENT RECOMMENDATION</Text>
-
-          {!!info.treatment && (
-            <View style={styles.section}>
-              <View style={styles.sectionHead}>
-                <Ionicons name="medkit-outline" size={16} color="#ef6c00" />
-                <Text style={[styles.sectionTitle, { color: '#ef6c00' }]}>
-                  TREATMENT
-                </Text>
-              </View>
-              <Text style={styles.sectionBody}>{info.treatment}</Text>
-            </View>
-          )}
-
-          {!!info.prevention && (
-            <View style={styles.section}>
-              <View style={styles.sectionHead}>
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={16}
-                  color="#2e7d32"
-                />
-                <Text style={[styles.sectionTitle, { color: '#2e7d32' }]}>
-                  PREVENTION
-                </Text>
-              </View>
-              <Text style={styles.sectionBody}>{info.prevention}</Text>
-            </View>
-          )}
-        </View>
-      )}
+      {/* ---------------- Treatment recommendation ---------------- */}
+      {showTreatment && <TreatmentRecommendationCard label={label} />}
 
       <Text style={styles.disclaimer}>
         Preliminary model trained on a limited dataset. Confirm with a grower
@@ -152,7 +143,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ececec',
     padding: 16,
-    marginBottom: 14,
   },
   cardHeading: {
     fontSize: 11,
@@ -165,28 +155,25 @@ const styles = StyleSheet.create({
   title: { fontSize: 17, fontWeight: '700' },
   meta: { fontSize: 13, color: '#6d6d6d', marginTop: 3 },
 
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 },
-  chip: {
-    backgroundColor: '#fdf3d8',
-    borderRadius: 6,
-    paddingVertical: 5,
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
+  // maxWidth keeps a long symptom inside the card: it wraps onto a second
+  // line instead of running past the edge.
+  tag: {
+    backgroundColor: '#fff1dc',
+    borderRadius: 12,
     paddingHorizontal: 10,
-    marginRight: 8,
-    marginBottom: 8,
+    paddingVertical: 4,
+    maxWidth: '100%',
   },
-  chipText: { fontSize: 12, color: '#6b5518' },
+  tagText: { fontSize: 11, lineHeight: 15, fontWeight: '600', color: '#9a5b00', flexShrink: 1 },
+  tagHealthy: { backgroundColor: '#e7f4e8' },
+  tagTextHealthy: { color: '#2e7d32' },
 
-  severityRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
-  severityLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#6d6d6d',
-    letterSpacing: 0.5,
-    marginRight: 10,
-  },
-  severityBar: { flexDirection: 'row', flex: 1 },
-  segment: { flex: 1, height: 5, borderRadius: 3, marginRight: 4 },
-  severityValue: { fontSize: 11, fontWeight: '600', marginLeft: 8 },
+  severityRow: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },
+  severityLabel: { fontSize: 11, fontWeight: '700', color: '#3a3a3a', letterSpacing: 0.6, width: 70 },
+  severityTrack: { flex: 1, flexDirection: 'row', gap: 4 },
+  severitySegment: { flex: 1, height: 5, borderRadius: 3 },
+  severityValue: { fontSize: 11, fontWeight: '700', marginLeft: 8, width: 62, textAlign: 'right' },
 
   lowConfidence: {
     fontSize: 12,
@@ -195,21 +182,12 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  section: { marginTop: 12 },
-  sectionHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginLeft: 6,
-  },
-  sectionBody: { fontSize: 13, color: '#3a3a3a', lineHeight: 19 },
-
   disclaimer: {
     fontSize: 11,
     color: '#8a8a8a',
     fontStyle: 'italic',
     lineHeight: 16,
+    marginTop: 14,
     marginBottom: 24,
   },
 });

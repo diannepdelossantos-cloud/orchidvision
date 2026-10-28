@@ -34,7 +34,7 @@ const TABS = [
   { key: 'history', label: 'History', icon: 'time-outline' },
 ];
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }) {
   const { colors } = useTheme();
   const { user, signOutUser } = useAuth();
   const { profile, loading, updateProfile, uploadAvatar } = useProfile();
@@ -159,7 +159,7 @@ export default function ProfileScreen() {
         {showRestore ? (
           <RestoreScreen colors={colors} />
         ) : activeTab === 'history' ? (
-          <HistoryTab colors={colors} onOpenRestore={() => setShowRestore(true)} />
+          <HistoryTab colors={colors} navigation={navigation} onOpenRestore={() => setShowRestore(true)} />
         ) : (
           <>
             <View style={[styles.headerCard, { backgroundColor: colors.surface }]}>

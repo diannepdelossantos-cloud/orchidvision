@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   increment,
   onSnapshot,
   orderBy,
@@ -31,7 +32,13 @@ export function subscribeToOrchids(uid, callback, onError) {
   return onSnapshot(
     q,
     (snapshot) => {
-      callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      // Deleted orchids stay in Firestore (so History → Restore can bring
+      // them back) but are hidden from My Orchids.
+      callback(
+        snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((o) => !o.deletedAt),
+      );
     },
     (error) => {
       console.error('[orchidService] subscribeToOrchids failed', { uid, code: error?.code, message: error?.message });
@@ -45,7 +52,7 @@ export function subscribeToOrchids(uid, callback, onError) {
 // so this reuses that upload instead of re-uploading the photo. Links the
 // scan back to the orchid via orchidId so future scans of the same plant
 // can be told apart from its first one.
-export async function createOrchid(uid, { nickname, speciesName, scanId, imageUrl, label, confidence }) {
+export async function createOrchid(uid, { nickname, speciesName, scanId, imageUrl, label, confidence, detections = [] }) {
   const orchidRef = doc(orchidsCollection());
 
   try {
@@ -56,6 +63,10 @@ export async function createOrchid(uid, { nickname, speciesName, scanId, imageUr
       imageUrl,
       lastLabel: label,
       lastConfidence: confidence,
+      // Mirrors scans/{scanId}.detections for whichever scan is currently
+      // this orchid's "last scan" photo, so the detail screen can draw
+      // bounding boxes without a second read against the scans collection.
+      lastDetections: detections,
       lastScanId: scanId,
       lastScanAt: serverTimestamp(),
       scanCount: 1,
@@ -68,7 +79,13 @@ export async function createOrchid(uid, { nickname, speciesName, scanId, imageUr
 
   if (scanId) {
     try {
-      await updateDoc(doc(db, 'scans', scanId), { orchidId: orchidRef.id });
+      // Rename the scan after the orchid so History shows "rotted waling
+      // waling" instead of the auto-generated "Waling-Waling #N".
+      await updateDoc(doc(db, 'scans', scanId), {
+        orchidId: orchidRef.id,
+        name: nickname,
+        plantName: nickname,
+      });
     } catch (error) {
       console.error('[orchidService] updateDoc scans failed', { uid, scanId, code: error?.code, message: error?.message });
       throw error;
@@ -85,7 +102,9 @@ export function subscribeToOrchid(orchidId, callback, onError) {
   return onSnapshot(
     doc(db, 'orchids', orchidId),
     (snapshot) => {
-      callback(snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null);
+      // A deleted (restorable) orchid reads as gone on the detail screen.
+      const data = snapshot.exists() ? snapshot.data() : null;
+      callback(data && !data.deletedAt ? { id: snapshot.id, ...data } : null);
     },
     (error) => {
       console.error('[orchidService] subscribeToOrchid failed', { orchidId, code: error?.code, message: error?.message });
@@ -109,7 +128,12 @@ export function subscribeToOrchidScans(uid, orchidId, callback, onError) {
   return onSnapshot(
     q,
     (snapshot) => {
-      callback(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      // Scans sitting in History → Restore aren't part of the orchid's history.
+      callback(
+        snapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((s) => !s.deletedAt),
+      );
     },
     (error) => {
       console.error('[orchidService] subscribeToOrchidScans failed', { orchidId, code: error?.code, message: error?.message });
@@ -122,17 +146,25 @@ export function subscribeToOrchidScans(uid, orchidId, callback, onError) {
 // orchid now" flow), instead of registering a new one. Updates the orchid's
 // denormalized "last scan" fields and bumps scanCount, then tags the scan
 // itself with orchidId the same way createOrchid does for a brand-new one.
-export async function attachScanToOrchid(uid, orchidId, { scanId, imageUrl, label, confidence }) {
+export async function attachScanToOrchid(uid, orchidId, { scanId, imageUrl, label, confidence, detections = [] }) {
   await updateDoc(doc(db, 'orchids', orchidId), {
     imageUrl,
     lastLabel: label,
     lastConfidence: confidence,
+    lastDetections: detections,
     lastScanId: scanId,
     lastScanAt: serverTimestamp(),
     scanCount: increment(1),
   });
 
   if (scanId) {
-    await updateDoc(doc(db, 'scans', scanId), { orchidId });
+    // Same renaming as createOrchid, so every scan of this orchid appears in
+    // History under the orchid's nickname.
+    const orchidSnap = await getDoc(doc(db, 'orchids', orchidId));
+    const nickname = orchidSnap.data()?.nickname;
+    await updateDoc(doc(db, 'scans', scanId), {
+      orchidId,
+      ...(nickname ? { name: nickname, plantName: nickname } : {}),
+    });
   }
 }

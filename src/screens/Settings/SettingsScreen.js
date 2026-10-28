@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AuthTextField from '../../components/AuthTextField';
 import PrimaryButton from '../../components/PrimaryButton';
 import DangerButton from '../../components/DangerButton';
+import ReportIssueModal from '../../components/ReportIssueModal';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useScanHistory } from '../../context/ScanHistoryContext';
@@ -60,6 +61,7 @@ export default function SettingsScreen() {
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [twoFactorError, setTwoFactorError] = useState(null);
   const [isVerifyingTwoFactorCode, setIsVerifyingTwoFactorCode] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
 
   const handleUpdatePassword = async () => {
     const nextErrors = {};
@@ -333,6 +335,22 @@ export default function SettingsScreen() {
           />
         </View>
 
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Help & Support</Text>
+        <TouchableOpacity
+          style={[styles.card, styles.linkRow, { backgroundColor: colors.surface }]}
+          onPress={() => setReportVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="flag-outline" size={20} color={colors.primary} />
+          <View style={styles.toggleText}>
+            <Text style={[styles.toggleLabel, { color: colors.textPrimary }]}>Report a problem</Text>
+            <Text style={[styles.toggleDescription, { color: colors.textSecondary }]}>
+              Tell the OrchidVision team about a bug or issue
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+        </TouchableOpacity>
+
         <View style={styles.destructiveRow}>
           <DangerButton
             title="Clear scan history"
@@ -352,6 +370,8 @@ export default function SettingsScreen() {
           />
         </View>
       </ScrollView>
+
+      <ReportIssueModal visible={reportVisible} onClose={() => setReportVisible(false)} />
     </SafeAreaView>
   );
 }
@@ -453,6 +473,11 @@ const styles = StyleSheet.create({
   },
   updatePasswordButton: {
     marginTop: SPACING.xs,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
   },
   destructiveRow: {
     flexDirection: 'row',

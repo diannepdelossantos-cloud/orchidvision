@@ -25,7 +25,7 @@ function FilterButton({ label, icon, active, onPress, colors }) {
   );
 }
 
-export default function HistoryTab({ colors, onOpenRestore }) {
+export default function HistoryTab({ colors, navigation, onOpenRestore }) {
   const { records, deleteRecord } = useScanHistory();
   const [sourceFilter, setSourceFilter] = useState(null); // null = Recents (all)
   const [editing, setEditing] = useState(false);
@@ -105,6 +105,7 @@ export default function HistoryTab({ colors, onOpenRestore }) {
             variant="history"
             editing={editing}
             onDelete={() => handleDelete(record)}
+            onPress={() => navigation.navigate('ScanDetail', { scanId: record.id })}
           />
         ))
       )}
