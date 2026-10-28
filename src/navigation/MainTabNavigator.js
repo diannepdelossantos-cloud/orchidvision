@@ -1,26 +1,14 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import ProfileScreen from '../screens/Profile/ProfileScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 import ScanScreen from '../screens/Main/ScanScreen';
+import OrchAiScreen from '../screens/Main/OrchAiScreen';
 import MyOrchidsNavigator from '../navigation/MyOrchidsNavigator';
 import { useTheme } from '../context/ThemeContext';
-import { SPACING, TYPOGRAPHY } from '../utils/theme';
 
 const Tab = createBottomTabNavigator();
-
-// OrchAi belongs to another teammate's module — this is a placeholder so
-// the tab bar matches the storyboard now, the same way Module 1's
-// AppNavigator stubbed out Permissions/Sign In before they existed.
-function ComingSoonScreen({ label, colors }) {
-  return (
-    <View style={[styles.placeholder, { backgroundColor: colors.background }]}>
-      <Text style={[styles.placeholderText, { color: colors.textSecondary }]}>{label}</Text>
-    </View>
-  );
-}
 
 export default function MainTabNavigator() {
   const { colors } = useTheme();
@@ -56,14 +44,11 @@ export default function MainTabNavigator() {
       />
       <Tab.Screen
         name="OrchAi"
+        component={OrchAiScreen}
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubble-ellipses-outline" size={size} color={color} />
-          ),
+          tabBarIcon: ({ color, size }) => <MaterialCommunityIcons name="robot-outline" size={size} color={color} />,
         }}
-      >
-        {() => <ComingSoonScreen label="OrchAi — coming soon" colors={colors} />}
-      </Tab.Screen>
+      />
       <Tab.Screen
         name="Settings"
         component={SettingsScreen}
@@ -72,16 +57,3 @@ export default function MainTabNavigator() {
     </Tab.Navigator>
   );
 }
-
-const styles = StyleSheet.create({
-  placeholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: SPACING.xl,
-  },
-  placeholderText: {
-    ...TYPOGRAPHY.body,
-    textAlign: 'center',
-  },
-});
