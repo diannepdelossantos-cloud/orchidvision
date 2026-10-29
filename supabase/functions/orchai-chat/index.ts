@@ -22,6 +22,20 @@ const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
 const MAX_HISTORY = 20;
 const MAX_MESSAGE_CHARS = 1000;
+const KNOWLEDGE_BASE_TTL_MS = 5 * 60 * 1000;
+
+// Short care answers don't need deep reasoning, and thinking is the main
+// source of latency. Gemini model generations name this setting
+// differently, so try the fastest option first and fall back whenever the
+// model rejects it. The index is remembered for as long as this function
+// instance stays warm, so the fallback only costs one extra request.
+const THINKING_CONFIGS = [
+  { thinkingLevel: 'minimal' },
+  { thinkingLevel: 'low' },
+  { thinkingBudget: 0 },
+  null,
+];
+let thinkingConfigIndex = 0;
 
 const FIREBASE_JWKS = createRemoteJWKSet(
   new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'),
@@ -118,7 +132,22 @@ const readList = (v?: FirestoreValue) =>
 // as the signed-in user, so Firestore security rules still apply. Only
 // entries for the supported conditions are kept. Returns '' on any failure
 // so the chat still works from the system instruction alone.
+//
+// The result is cached for a few minutes per function instance — the
+// entries are the same for every signed-in user, and admin edits still show
+// up within KNOWLEDGE_BASE_TTL_MS.
+let knowledgeBaseCache = { text: '', expiresAt: 0 };
+
 async function loadKnowledgeBase(firebaseToken: string) {
+  if (knowledgeBaseCache.text && Date.now() < knowledgeBaseCache.expiresAt) {
+    return knowledgeBaseCache.text;
+  }
+  const text = await fetchKnowledgeBase(firebaseToken);
+  if (text) knowledgeBaseCache = { text, expiresAt: Date.now() + KNOWLEDGE_BASE_TTL_MS };
+  return text;
+}
+
+async function fetchKnowledgeBase(firebaseToken: string) {
   try {
     const res = await fetch(
       `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/diseases?pageSize=100`,
@@ -168,6 +197,10 @@ Deno.serve(async (req) => {
 
   const firebaseToken = req.headers.get('x-firebase-token');
   if (!firebaseToken) return json({ error: 'Please sign in to use OrchAi.' }, 401);
+
+  // Start loading the knowledge base while the token is verified. Firestore
+  // checks the same token itself, so nothing is read for an invalid one.
+  const knowledgeBasePromise = loadKnowledgeBase(firebaseToken);
   try {
     await verifyFirebaseToken(firebaseToken);
   } catch {
@@ -197,23 +230,37 @@ Deno.serve(async (req) => {
   const firstUser = contents.findIndex((c) => c.role === 'user');
   if (firstUser === -1) return json({ error: 'No message provided.' }, 400);
 
-  const knowledgeBase = await loadKnowledgeBase(firebaseToken);
+  const knowledgeBase = await knowledgeBasePromise;
   const systemText = knowledgeBase
     ? `${SYSTEM_INSTRUCTION}\n\nDisease Knowledge Base (official OrchidVision reference):\n${knowledgeBase}`
     : SYSTEM_INSTRUCTION;
 
-  const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-    {
+  const callGemini = (thinkingConfig: Record<string, unknown> | null) =>
+    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemText }] },
         contents: contents.slice(firstUser),
-        generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 2048,
+          ...(thinkingConfig && { thinkingConfig }),
+        },
       }),
-    },
-  );
+    });
+
+  let geminiRes = await callGemini(THINKING_CONFIGS[thinkingConfigIndex]);
+  while (geminiRes.status === 400 && thinkingConfigIndex < THINKING_CONFIGS.length - 1) {
+    const errorText = await geminiRes.text();
+    if (!/thinking/i.test(errorText)) {
+      console.error('Gemini error', geminiRes.status, errorText);
+      return json({ error: 'OrchAi could not answer right now. Please try again.' }, 502);
+    }
+    thinkingConfigIndex += 1;
+    console.warn('Thinking config rejected, falling back to', THINKING_CONFIGS[thinkingConfigIndex]);
+    geminiRes = await callGemini(THINKING_CONFIGS[thinkingConfigIndex]);
+  }
 
   if (geminiRes.status === 429) {
     return json({ error: 'OrchAi is busy right now (free usage limit reached). Please try again in a minute.' }, 429);
