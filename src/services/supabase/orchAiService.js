@@ -5,7 +5,8 @@ import { supabase } from './supabaseClient';
 // (supabase/functions/orchai-chat), which holds the Gemini API key and the
 // Waling-waling-only system prompt. The Firebase ID token is passed so the
 // function only serves signed-in OrchidVision users.
-export async function sendOrchAiMessage(messages) {
+// Pass an AbortSignal to let the user stop a reply mid-generation.
+export async function sendOrchAiMessage(messages, { signal } = {}) {
   const firebaseUser = auth.currentUser;
   if (!firebaseUser) throw new Error('Please sign in to use OrchAi.');
   const token = await firebaseUser.getIdToken();
@@ -13,6 +14,7 @@ export async function sendOrchAiMessage(messages) {
   const { data, error } = await supabase.functions.invoke('orchai-chat', {
     body: { messages: messages.map(({ role, text }) => ({ role, text })) },
     headers: { 'x-firebase-token': token },
+    signal,
   });
 
   if (error) {

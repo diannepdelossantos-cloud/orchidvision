@@ -3,7 +3,8 @@ import {
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
-  Platform,
+  Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { sendOrchAiMessage } from '../../services/supabase/orchAiService';
-import { RADIUS, SPACING, TYPOGRAPHY } from '../../utils/theme';
+import { showAlert } from '../../utils/showAlert';
+import { RADIUS, SHADOW, SPACING, TYPOGRAPHY } from '../../utils/theme';
 
 const GREETING = {
   id: 'greeting',
@@ -49,6 +51,10 @@ function BotAvatar({ colors }) {
 }
 
 function MessageBubble({ message, colors }) {
+  if (message.isNotice) {
+    return <Text style={[styles.notice, { color: colors.textSecondary }]}>{message.text}</Text>;
+  }
+
   if (message.role === 'user') {
     return (
       <View style={[styles.row, styles.rowUser]}>
@@ -96,46 +102,112 @@ export default function OrchAiScreen() {
   const [messages, setMessages] = useState([GREETING]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const listRef = useRef(null);
+  // The in-flight request, so Stop and Delete can cancel it.
+  const abortRef = useRef(null);
 
   const send = async (rawText) => {
     const text = rawText.trim();
     if (!text || sending) return;
 
     const userMessage = { id: `u-${Date.now()}`, role: 'user', text };
-    // Error bubbles are UI-only, so they're left out of the history sent to Gemini.
-    const history = [...messages.filter((m) => !m.isError), userMessage];
+    // Error and notice bubbles are UI-only, so they're left out of the history sent to Gemini.
+    const history = [...messages.filter((m) => !m.isError && !m.isNotice), userMessage];
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setSending(true);
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      const reply = await sendOrchAiMessage(history);
+      const reply = await sendOrchAiMessage(history, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setMessages((prev) => [...prev, { id: `m-${Date.now()}`, role: 'model', text: reply }]);
     } catch (error) {
+      if (controller.signal.aborted) return;
       setMessages((prev) => [
         ...prev,
         { id: `e-${Date.now()}`, role: 'model', text: error.message, isError: true },
       ]);
     } finally {
-      setSending(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setSending(false);
+      }
     }
   };
 
+  const cancelPending = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setSending(false);
+  };
+
+  const stop = () => {
+    cancelPending();
+    setMessages((prev) => [...prev, { id: `n-${Date.now()}`, role: 'model', text: 'Response stopped.', isNotice: true }]);
+  };
+
+  const confirmDelete = () => {
+    setMenuOpen(false);
+    showAlert('Delete conversation?', 'All messages in this chat will be removed. This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
+          cancelPending();
+          setMessages([GREETING]);
+          setInput('');
+        },
+      },
+    ]);
+  };
+
   const canSend = input.trim().length > 0 && !sending;
+  const hasConversation = messages.length > 1 || sending;
 
   return (
     <SafeAreaView edges={['top']} style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <View style={styles.titleRow}>
-            <Text style={[styles.title, { color: colors.textPrimary }]}>OrchAi</Text>
-            <Text style={[styles.titleTag, { color: colors.textPrimary }]}>AI Assistant Care Bot</Text>
+          <View style={styles.headerText}>
+            <View style={styles.titleRow}>
+              <Text style={[styles.title, { color: colors.textPrimary }]}>OrchAi</Text>
+              <Text style={[styles.titleTag, { color: colors.textPrimary }]}>AI Assistant Care Bot</Text>
+            </View>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              Ask about Waling-waling symptoms, care, and treatment
+            </Text>
           </View>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Ask about Waling-waling symptoms, care, and treatment
-          </Text>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => setMenuOpen(true)}
+            hitSlop={8}
+            accessibilityLabel="Chat options"
+          >
+            <Ionicons name="ellipsis-vertical" size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
         </View>
+
+        <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+          <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
+            <SafeAreaView edges={['top']}>
+              <View style={[styles.menu, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <TouchableOpacity
+                  style={[styles.menuItem, { opacity: hasConversation ? 1 : 0.4 }]}
+                  onPress={confirmDelete}
+                  disabled={!hasConversation}
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                  <Text style={[styles.menuItemText, { color: colors.danger }]}>Delete conversation</Text>
+                </TouchableOpacity>
+              </View>
+            </SafeAreaView>
+          </Pressable>
+        </Modal>
 
         <FlatList
           ref={listRef}
@@ -183,14 +255,24 @@ export default function OrchAiScreen() {
               maxLength={MAX_INPUT_LENGTH}
               multiline
             />
-            <TouchableOpacity
-              style={[styles.sendButton, { backgroundColor: colors.primary, opacity: canSend ? 1 : 0.5 }]}
-              onPress={() => send(input)}
-              disabled={!canSend}
-              accessibilityLabel="Send message"
-            >
-              <Ionicons name="paper-plane-outline" size={18} color={colors.textInverse} />
-            </TouchableOpacity>
+            {sending ? (
+              <TouchableOpacity
+                style={[styles.sendButton, { backgroundColor: colors.primary }]}
+                onPress={stop}
+                accessibilityLabel="Stop response"
+              >
+                <Ionicons name="stop" size={16} color={colors.textInverse} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.sendButton, { backgroundColor: colors.primary, opacity: canSend ? 1 : 0.5 }]}
+                onPress={() => send(input)}
+                disabled={!canSend}
+                accessibilityLabel="Send message"
+              >
+                <Ionicons name="paper-plane-outline" size={18} color={colors.textInverse} />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -203,11 +285,34 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
 
   header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.sm,
     paddingBottom: SPACING.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  headerText: { flex: 1 },
+  menuButton: { padding: SPACING.xs, marginTop: SPACING.xs },
+  menuBackdrop: { flex: 1 },
+  menu: {
+    alignSelf: 'flex-end',
+    marginTop: SPACING.xxl,
+    marginRight: SPACING.md,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    paddingVertical: SPACING.xs,
+    ...SHADOW.soft,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+  },
+  menuItemText: { ...TYPOGRAPHY.body, fontWeight: '600' },
+  notice: { ...TYPOGRAPHY.caption, textAlign: 'center', fontStyle: 'italic' },
   titleRow: { flexDirection: 'row', alignItems: 'baseline', gap: SPACING.sm },
   title: { ...TYPOGRAPHY.h1 },
   titleTag: { ...TYPOGRAPHY.body, fontWeight: '700' },
