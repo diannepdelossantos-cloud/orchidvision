@@ -33,22 +33,46 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+// The only conditions OrchidVision's scanner can report. OrchAi must not
+// discuss or diagnose anything outside this list.
+const SUPPORTED_CONDITIONS = [
+  'Anthracnose',
+  'Black Rot',
+  'Sunburn',
+  'Bacterial Brown Spot',
+  'Bacterial Soft Rot',
+  'Leaf Spot',
+  'Healthy',
+];
+
 const SYSTEM_INSTRUCTION = `You are OrchAi, the AI care assistant inside the OrchidVision mobile app.
 OrchidVision scans Waling-waling orchids (Vanda sanderiana, also called Euanthe sanderiana) and
-classifies them into one of these conditions: Anthracnose, Black Rot, Sunburn, Bacterial Brown Spot,
-Bacterial Soft Rot, Leaf Tip Burn, or Healthy.
+classifies them into exactly one of these ${SUPPORTED_CONDITIONS.length} conditions:
+${SUPPORTED_CONDITIONS.join(', ')}.
 
 YOUR SCOPE — you may ONLY answer questions about:
 1. The Waling-waling orchid (Vanda sanderiana): identification, biology, native habitat in Mindanao,
    conservation status, and its significance as a Philippine national symbol.
-2. Waling-waling diseases, pests and disorders: symptoms, causes, how they spread, how to tell them apart,
-   and treatment (especially the conditions listed above).
+2. The conditions listed above, and ONLY those: symptoms, causes, how they spread, how to tell them
+   apart, treatment, and recovery.
 3. Waling-waling care: light, temperature, humidity, watering, air circulation, mounting/basket culture,
    fertilizing, repotting, propagation, and flowering.
 4. Health recommendations: prevention, quarantine, sanitation, recovery after disease, and
    interpreting OrchidVision scan results.
 General orchid questions are allowed ONLY when the answer is relevant to growing Waling-waling or
 other Vanda orchids — always tie the answer back to Waling-waling.
+
+DISEASE RULES:
+- Only give diagnosis, treatment, or prevention advice for the conditions listed above.
+- If the user asks about any other disease, pest, or disorder (for example Fusarium wilt, root rot,
+  viruses, mealybugs, or scale), say that OrchidVision only covers
+  ${SUPPORTED_CONDITIONS.join(', ')}, and suggest consulting a local orchid grower or agriculturist
+  for anything else. Do not give treatment advice for it.
+- If described symptoms do not clearly match one of the listed conditions, do not guess another
+  disease. Suggest scanning the plant with OrchidVision and isolating it in the meantime.
+- When a "Disease Knowledge Base" section is provided below, it is the app's official reference and
+  matches what users see on their scan results. Base treatment and prevention advice on it first and
+  never contradict it.
 
 OUT OF SCOPE: anything else (other topics, general chit-chat, coding, homework, other plants unrelated
 to orchid care, human or animal medical advice, etc.). For out-of-scope requests, reply briefly and
@@ -71,6 +95,59 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
   });
+}
+
+// Same normalization the app uses (diseasesService.normalizeLabel), so
+// "Leaf Spot", "leaf-spot" and "leaf_spot" all match.
+const normalizeLabel = (label: unknown) =>
+  String(label ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+
+const SUPPORTED_LABELS = new Set(SUPPORTED_CONDITIONS.map(normalizeLabel));
+
+type FirestoreValue = {
+  stringValue?: string;
+  arrayValue?: { values?: FirestoreValue[] };
+};
+
+const readString = (v?: FirestoreValue) => v?.stringValue?.trim() ?? '';
+const readList = (v?: FirestoreValue) =>
+  (v?.arrayValue?.values ?? []).map(readString).filter(Boolean);
+
+// Loads the admin-managed Disease Knowledge Base (Firestore `diseases`
+// collection) — the same entries the scan result's treatment card shows —
+// as the signed-in user, so Firestore security rules still apply. Only
+// entries for the supported conditions are kept. Returns '' on any failure
+// so the chat still works from the system instruction alone.
+async function loadKnowledgeBase(firebaseToken: string) {
+  try {
+    const res = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/diseases?pageSize=100`,
+      { headers: { Authorization: `Bearer ${firebaseToken}` } },
+    );
+    if (!res.ok) {
+      console.warn('Knowledge base fetch failed', res.status, await res.text());
+      return '';
+    }
+    const { documents = [] } = await res.json();
+    return documents
+      .map((d: { fields?: Record<string, FirestoreValue> }) => d.fields ?? {})
+      .filter((f: Record<string, FirestoreValue>) => SUPPORTED_LABELS.has(normalizeLabel(readString(f.classificationLabel))))
+      .map((f: Record<string, FirestoreValue>) =>
+        [
+          `- ${readString(f.name)} (${readString(f.category) || 'unspecified type'}, severity: ${readString(f.severity) || 'n/a'})`,
+          readList(f.symptoms).length && `  Symptoms: ${readList(f.symptoms).join('; ')}`,
+          readList(f.protocols).length && `  Treatment: ${readList(f.protocols).join('; ')}`,
+          readList(f.prevention).length && `  Prevention: ${readList(f.prevention).join('; ')}`,
+          readString(f.sampleTreatment) && `  Example treatment: ${readString(f.sampleTreatment)}`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      )
+      .join('\n');
+  } catch (error) {
+    console.warn('Knowledge base fetch failed', error);
+    return '';
+  }
 }
 
 async function verifyFirebaseToken(token: string) {
@@ -120,13 +197,18 @@ Deno.serve(async (req) => {
   const firstUser = contents.findIndex((c) => c.role === 'user');
   if (firstUser === -1) return json({ error: 'No message provided.' }, 400);
 
+  const knowledgeBase = await loadKnowledgeBase(firebaseToken);
+  const systemText = knowledgeBase
+    ? `${SYSTEM_INSTRUCTION}\n\nDisease Knowledge Base (official OrchidVision reference):\n${knowledgeBase}`
+    : SYSTEM_INSTRUCTION;
+
   const geminiRes = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+        systemInstruction: { parts: [{ text: systemText }] },
         contents: contents.slice(firstUser),
         generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
       }),
